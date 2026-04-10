@@ -124,6 +124,7 @@ public class LanguageService
     public string AboutBtn        => Pt ? "Sobre"    : "About";
     public string AboutTitle      => Pt ? "Sobre o Pontinho" : "About Pontinho";
     public string AboutCreatedBy  => Pt ? "Criado por" : "Created by";
+    public string AboutSourceCode => Pt ? "Código-fonte" : "Source code";
     public string AboutLicenseTitle => Pt ? "Licença" : "License";
     public string AboutLicenseBody => Pt
         ? "Este software é distribuído sob a Licença MIT. Você é livre para copiar, modificar e distribuir este software, desde que os créditos ao autor sejam mantidos."

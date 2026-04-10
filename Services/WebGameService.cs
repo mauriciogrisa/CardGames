@@ -374,7 +374,26 @@ public class WebGameService
             return;
         }
 
-        // Single-combo classify failed — try splitting selected cards into 2+ valid combinations.
+        // Single-combo classify failed — try triple lay-down with duplicate-suit burn cards.
+        // e.g. Q♣ Q♦ Q♠ Q♣ Q♠ → triple Q♣Q♦Q♠ + Q♣Q♠ burned at turn end.
+        var tripleWithBurns = TryClassifyTripleWithBurns(cards);
+        if (tripleWithBurns.HasValue)
+        {
+            var (baseCards, burnCards) = tripleWithBurns.Value;
+            var laid = TurnService.ExecuteLayDown(State!, baseCards, allowJokerAtEnds: false);
+            int comboIndex = State!.Table.Combinations.Count - 1;
+            foreach (var burn in burnCards)
+            {
+                TurnService.ExecuteAddToTable(State!, comboIndex, burn, isWinningMove);
+                _tripleDiscardsPending.Add((comboIndex, burn));
+            }
+            _log.Log($"  {MainPlayer.Name} laid down: {GameLogger.Combo(laid.Cards, CombinationType.Triple)}");
+            _mainPlayerTurnSummary.LaidDown.Add((baseCards, CombinationType.Triple));
+            CompleteLayDown(cards);
+            return;
+        }
+
+        // Try splitting selected cards into 2+ valid combinations.
         var partition = TryPartition(cards, allowJokerAtEnds: isWinningMove);
         if (partition != null)
         {
@@ -432,6 +451,22 @@ public class WebGameService
             }
         }
         return null;
+    }
+
+    // Returns base cards (one per distinct suit) + burn cards (duplicate suits) when the
+    // selection is a valid triple base (exactly 3 distinct suits, same rank, 4–6 total, ≤2 per suit).
+    private static (List<Card> baseCards, List<Card> burnCards)? TryClassifyTripleWithBurns(List<Card> cards)
+    {
+        if (cards.Count < 4 || cards.Count > 6) return null;
+        if (cards.Any(c => c.IsJoker)) return null;
+        var rank = cards[0].Rank;
+        if (cards.Any(c => c.Rank != rank)) return null;
+        var bySuit = cards.GroupBy(c => c.Suit).ToDictionary(g => g.Key, g => g.ToList());
+        if (bySuit.Count != 3) return null;                             // must have exactly 3 distinct suits
+        if (bySuit.Values.Any(g => g.Count > 2)) return null;          // max 2 per suit
+        var baseCards = bySuit.Values.Select(g => g[0]).ToList();
+        var burnCards = bySuit.Values.Where(g => g.Count > 1).Select(g => g[1]).ToList();
+        return (baseCards, burnCards);
     }
 
     private static IEnumerable<List<int>> IndexSubsets(List<int> src, int size)
@@ -529,6 +564,16 @@ public class WebGameService
         var cards = SelectedCards.ToList();
         bool isWinningMove = IsWinningMove(cards.Count);
         if (!combo.CanAcceptAll(cards, isWinningMove)) { ErrorMessage = _lang.ErrCantAddToCombo; return false; }
+        if (combo.Type == CombinationType.Triple)
+        {
+            var suitCounts = combo.Cards.GroupBy(c => c.Suit).ToDictionary(g => g.Key, g => g.Count());
+            foreach (var c in cards)
+            {
+                if (!c.IsJoker && suitCounts.GetValueOrDefault(c.Suit) >= 1)
+                    _tripleDiscardsPending.Add((comboIndex, c));
+                suitCounts[c.Suit] = suitCounts.GetValueOrDefault(c.Suit) + 1;
+            }
+        }
         combo.AddCards(cards, isWinningMove);
         foreach (var c in cards) { MainPlayer.Hand.Remove(c); SelectedCards.Remove(c); }
         MainPlayer.ClearConstraintsIfUsed(cards);

@@ -163,12 +163,32 @@ public class Combination
 
     // ── Multi-card add ───────────────────────────────────────────────────────
 
-    // Returns true if all cards can be added to this sequence at once.
+    // Returns true if all cards can be added to this combination at once.
     public bool CanAcceptAll(IReadOnlyList<Card> cards, bool isWinningMove = false)
     {
-        if (Type != CombinationType.Sequence) return false;
+        if (Type == CombinationType.Triple)
+            return CanAcceptAllTriple(cards);
         var test = _cards.Concat(cards).ToList();
         return CombinationValidator.IsValidSequence(test, isWinningMove);
+    }
+
+    private bool CanAcceptAllTriple(IReadOnlyList<Card> cards)
+    {
+        if (cards.Count == 0) return false;
+        var rank = _cards[0].Rank;
+        var suitCounts = _cards.GroupBy(c => c.Suit).ToDictionary(g => g.Key, g => g.Count());
+        int total = _cards.Count;
+        foreach (var card in cards)
+        {
+            if (card.IsJoker) return false;
+            if (card.Rank != rank) return false;
+            if (card.Suit == _estrangeiraSuit) return false;
+            int count = suitCounts.GetValueOrDefault(card.Suit);
+            if (count >= MaxCardsPerSuit) return false;
+            suitCounts[card.Suit] = count + 1;
+            if (++total > MaxTripleSize) return false;
+        }
+        return true;
     }
 
     // Validates the combined result, then adds all cards at once.

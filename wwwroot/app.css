@@ -179,6 +179,7 @@ body {
     color: #fff;
     font-weight: 500;
 }
+.about-value a { color: #fff; }
 .about-license-text {
     font-size: 0.88rem;
     color: rgba(255,255,255,0.75);
