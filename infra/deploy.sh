@@ -27,6 +27,7 @@ echo "=== 3. Build and deploy app ==="
 az webapp up \
   --name "$APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
+  --plan "${APP_NAME}-plan" \
   --runtime "DOTNETCORE:10.0" \
   --os-type linux
 
