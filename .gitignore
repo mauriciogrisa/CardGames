@@ -16,6 +16,9 @@ bin/Debug/net10.0/logs/
 .claude/
 CLAUDE.md
 
+# Azure CLI local defaults
+.azure/
+
 # OS
 .DS_Store
 Thumbs.db
