@@ -2,6 +2,8 @@
 
 A browser-based implementation of **Pontinho** (Brazilian Rummy variant) for 1 human player against 1–7 CPU opponents (2–8 players total). Built with Blazor Server on .NET 10. All game logic runs server-side; the browser updates via SignalR.
 
+**Live app**: https://jogosdecartas.azurewebsites.net
+
 ## Features
 
 - 1 vs 1–7 CPU opponents

@@ -1,5 +1,5 @@
 @description('Name of the web app (must be globally unique).')
-param appName string = 'cardgames-mauricio'
+param appName string = 'jogosdecartas'
 
 @description('Azure region for all resources.')
 param location string = 'brazilsouth'
@@ -32,6 +32,7 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
     httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'DOTNETCORE|10.0'
+      appCommandLine: 'dotnet CardGames.dll'
       webSocketsEnabled: true        // required for Blazor Server / SignalR
       minTlsVersion: '1.2'
       remoteDebuggingEnabled: false
