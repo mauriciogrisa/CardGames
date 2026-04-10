@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head><title>Sound Test</title></head>
+<body style="font-family:sans-serif;padding:40px;background:#1a1a2e;color:#eee">
+<h2>Game Lose Explosion — Sound Test</h2>
+<button onclick="play()" style="font-size:1.2rem;padding:12px 30px;cursor:pointer;border-radius:8px;border:none;background:#c0392b;color:#fff">
+    💀 Play Explosion
+</button>
+<script>
+function play() {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var now = ctx.currentTime;
+
+    function noise(dur) {
+        var n = Math.ceil(ctx.sampleRate * dur);
+        var buf = ctx.createBuffer(1, n, ctx.sampleRate);
+        var d = buf.getChannelData(0);
+        for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+        var src = ctx.createBufferSource();
+        src.buffer = buf;
+        return src;
+    }
+
+    // ── Layer 1: deep BOOM — the main explosion body ──
+    var boom = ctx.createOscillator();
+    var boomEnv = ctx.createGain();
+    boom.type = 'sine';
+    boom.frequency.setValueAtTime(80, now);
+    boom.frequency.exponentialRampToValueAtTime(12, now + 4.0);
+    boomEnv.gain.setValueAtTime(0, now);
+    boomEnv.gain.linearRampToValueAtTime(1.0, now + 0.025);
+    boomEnv.gain.exponentialRampToValueAtTime(0.001, now + 5.0);
+    boom.connect(boomEnv); boomEnv.connect(ctx.destination);
+    boom.start(now); boom.stop(now + 5.0);
+
+    // ── Layer 2: warmth — second harmonic adds fullness ──
+    var warm = ctx.createOscillator();
+    var warmEnv = ctx.createGain();
+    warm.type = 'sine';
+    warm.frequency.setValueAtTime(160, now);
+    warm.frequency.exponentialRampToValueAtTime(28, now + 2.5);
+    warmEnv.gain.setValueAtTime(0, now);
+    warmEnv.gain.linearRampToValueAtTime(0.5, now + 0.02);
+    warmEnv.gain.exponentialRampToValueAtTime(0.001, now + 3.0);
+    warm.connect(warmEnv); warmEnv.connect(ctx.destination);
+    warm.start(now); warm.stop(now + 3.0);
+
+    // ── Layer 3: low rumble — air and ground vibration ──
+    var rumble = noise(7.0);
+    var rumbleLp = ctx.createBiquadFilter();
+    rumbleLp.type = 'lowpass';
+    rumbleLp.frequency.setValueAtTime(200, now);
+    rumbleLp.frequency.exponentialRampToValueAtTime(30, now + 6.5);
+    var rumbleEnv = ctx.createGain();
+    rumbleEnv.gain.setValueAtTime(0, now);
+    rumbleEnv.gain.linearRampToValueAtTime(0.6, now + 0.08);
+    rumbleEnv.gain.setValueAtTime(0.6, now + 0.5);
+    rumbleEnv.gain.exponentialRampToValueAtTime(0.001, now + 7.0);
+    rumble.connect(rumbleLp); rumbleLp.connect(rumbleEnv); rumbleEnv.connect(ctx.destination);
+    rumble.start(now); rumble.stop(now + 7.0);
+
+    // ── Layer 4: pressure whoosh — soft air displacement ──
+    var whoosh = noise(3.0);
+    var whooshLp = ctx.createBiquadFilter();
+    whooshLp.type = 'lowpass';
+    whooshLp.frequency.setValueAtTime(600, now);
+    whooshLp.frequency.exponentialRampToValueAtTime(50, now + 2.8);
+    var whooshEnv = ctx.createGain();
+    whooshEnv.gain.setValueAtTime(0, now);
+    whooshEnv.gain.linearRampToValueAtTime(0.4, now + 0.03);
+    whooshEnv.gain.exponentialRampToValueAtTime(0.001, now + 3.0);
+    whoosh.connect(whooshLp); whooshLp.connect(whooshEnv); whooshEnv.connect(ctx.destination);
+    whoosh.start(now); whoosh.stop(now + 3.0);
+}
+</script>
+</body>
+</html>

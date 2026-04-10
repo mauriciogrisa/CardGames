@@ -1,0 +1,47 @@
+@if (Card.IsJoker)
+{
+    <div class="card-corner tl">
+        <span class="joker-rank">Jkr</span>
+    </div>
+    <div class="joker-body">
+        <span class="joker-emoji">🃏</span>
+        <span class="joker-text">JOKER</span>
+    </div>
+    <div class="card-corner br">
+        <span class="joker-rank">Jkr</span>
+    </div>
+}
+else
+{
+    <div class="card-corner tl">
+        <span class="corner-rank">@RankStr</span>
+        <span class="corner-suit">@SuitChar</span>
+    </div>
+    <div class="card-center-suit">@SuitChar</div>
+    <div class="card-corner br">
+        <span class="corner-rank">@RankStr</span>
+        <span class="corner-suit">@SuitChar</span>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Card Card { get; set; } = null!;
+
+    private string RankStr => Card.Rank switch
+    {
+        Rank.Ace   => "A",
+        Rank.Jack  => "J",
+        Rank.Queen => "Q",
+        Rank.King  => "K",
+        _          => ((int)Card.Rank).ToString()
+    };
+
+    private string SuitChar => Card.Suit switch
+    {
+        Suit.Hearts   => "♥",
+        Suit.Diamonds => "♦",
+        Suit.Clubs    => "♣",
+        Suit.Spades   => "♠",
+        _             => ""
+    };
+}

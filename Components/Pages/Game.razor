@@ -1,0 +1,2138 @@
+@page "/"
+@implements IAsyncDisposable
+@inject WebGameService GameSvc
+@inject LanguageService LangSvc
+@inject IJSRuntime JS
+
+<PageTitle>Pontinho</PageTitle>
+
+<div class="game-container players-@(IsSimulationLayout ? GameSvc.RoundCpus.Count : GameSvc.ActiveLayoutCount) @(GameSvc.Cpus.Count == 1 ? "layout-2p" : "") @(GameSvc.IsSimulationMode ? "sim-mode" : "") @(SimSeatCount != 1 && SimSeatCount != 3 && SimSeatCount != 6 && SimSeatCount != 7 ? "expand-table" : "") @(_tableExpanded ? "table-expanded" : "") @(_combosShrunk ? "combos-shrunk" : "") @(_dealRevealCounts.Count > 0 ? "dealing" : "") @(GameSvc.ActiveLayoutCount > 4 ? "side-compact" : "") @(_showGhostSlots ? "show-ghost-slots" : "")">
+
+    @if (GameSvc.Phase == GamePhase.Welcome)
+    {
+        <div class="welcome-screen">
+            <div class="welcome-table">
+            <!-- Large atmospheric suit symbols in corners -->
+            <div class="wc-bg" aria-hidden="true">
+                <span class="wc-bg-s wc-bg-tl">♠</span>
+                <span class="wc-bg-s wc-bg-tr red">♥</span>
+                <span class="wc-bg-s wc-bg-bl red">♦</span>
+                <span class="wc-bg-s wc-bg-br">♣</span>
+            </div>
+
+            <div class="welcome-inner">
+                <!-- Title -->
+                <div class="welcome-hero">
+                    <h1 class="welcome-title">PONTINHO</h1>
+                    <div class="welcome-divider" aria-hidden="true">
+                        <span class="wd-line"></span>
+                        <span class="wd-suit">♠</span>
+                        <span class="wd-suit red">♥</span>
+                        <span class="wd-suit red">♦</span>
+                        <span class="wd-suit">♣</span>
+                        <span class="wd-line"></span>
+                    </div>
+                    <p class="welcome-subtitle">@LangSvc.Subtitle</p>
+                </div>
+
+                <!-- Settings panel -->
+                <div class="welcome-panel">
+                    <div class="lang-picker">
+                        <button class="btn-lang @(LangSvc.Language == AppLanguage.English ? "active" : "")"
+                                @onclick="() => SetLanguage(AppLanguage.English)">English</button>
+                        <button class="btn-lang @(LangSvc.Language == AppLanguage.Portuguese ? "active" : "")"
+                                @onclick="() => SetLanguage(AppLanguage.Portuguese)">Português</button>
+                    </div>
+                    <div class="welcome-settings">
+                        <div class="ws-field ws-field-full">
+                            <label class="ws-label" for="name-input">@LangSvc.YourNameLabel</label>
+                            <input id="name-input" class="diff-select" type="text" maxlength="8"
+                                   placeholder="@LangSvc.YourNamePlaceholder"
+                                   @bind="GameSvc.PlayerName" @bind:event="oninput" />
+                        </div>
+                        <div class="ws-field">
+                            <label class="ws-label" for="cpu-count-select">@LangSvc.CpuCountLabel</label>
+                            <select id="cpu-count-select" class="diff-select"
+                                    @bind="GameSvc.CpuCount">
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="welcome-actions">
+                        <button class="btn-start" @onclick="DoStartGame">@LangSvc.StartGame</button>
+                        <button class="btn-rules" @onclick="() => _showRules = true">@LangSvc.RulesBtn</button>
+                    </div>
+                </div>
+
+                <!-- Decorative card fan -->
+                <div class="welcome-fan" aria-hidden="true">
+                    <div class="wf-card"></div>
+                    <div class="wf-card"></div>
+                    <div class="wf-card"></div>
+                    <div class="wf-card"></div>
+                    <div class="wf-card"></div>
+                    <div class="wf-card"></div>
+                    <div class="wf-card"></div>
+                </div>
+            </div>
+            </div> <!-- /welcome-table -->
+        </div>
+    }
+    else
+    {
+        <!-- Header -->
+        <div class="header">
+            <span class="game-title">PONTINHO</span>
+            <div class="header-btns">
+                <button class="btn-rules-header" @onclick="() => _showRules = true">@LangSvc.RulesBtn</button>
+                <button class="btn-rules-header" @onclick="() => _showAbout = true">@LangSvc.AboutBtn</button>
+                <button class="btn-sound-header" title="@(_soundEnabled ? "Mute sounds" : "Unmute sounds")" @onclick="ToggleSound">@(_soundEnabled ? "🔊" : "🔇")</button>
+                <button class="btn-quit-header" @onclick="OnQuitClick">@LangSvc.QuitBtn</button>
+            </div>
+        </div>
+
+        <!-- Game layout: [table] [results panel] — header-btns and results panel share the same grid column -->
+        <div class="game-layout">
+        <div class="game-table-wrap">
+        <div class="game-table">
+
+        <!-- CPU seats. Anti-clockwise: right side first, then top, then left.
+             count==6 (7-player): right stack=CPUs 0,1; top pair=CPUs 2(right),3(left); left stack=CPUs 4,5.
+             count==7 (8-player): bottom-right=CPU0; right stack=CPUs 1,2; top pair=CPUs 3(right),4(left); left stack=CPUs 5,6.
+             For other counts, uses GetSeat. For 5-CPU count, index 2 goes inside seat-center. -->
+        @if (UpperCpus.Count == 6)
+        {
+            var _c0 = UpperCpus[0]; var _c0a = IsCpuActive(_c0);
+            var _c1 = UpperCpus[1]; var _c1a = IsCpuActive(_c1);
+            var _c2 = UpperCpus[2]; var _c2a = IsCpuActive(_c2);
+            var _c3 = UpperCpus[3]; var _c3a = IsCpuActive(_c3);
+            var _c4 = UpperCpus[4]; var _c4a = IsCpuActive(_c4);
+            var _c5 = UpperCpus[5]; var _c5a = IsCpuActive(_c5);
+            <div class="seat-left-stack">
+                <div class="player-section seat-left @(_c4a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c4.Name) { <span class="sh-first-badge">1°</span> }@_c4.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-side">
+                        @if (ShowCpuHandFaceUp(_c4.Id)) { @foreach (var c in CpuHandForDisplay(_c4)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c4.Id, _c4.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+                <div class="player-section seat-left @(_c5a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c5.Name) { <span class="sh-first-badge">1°</span> }@_c5.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-side">
+                        @if (ShowCpuHandFaceUp(_c5.Id)) { @foreach (var c in CpuHandForDisplay(_c5)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c5.Id, _c5.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+            </div>
+            <div class="seat-top-pair">
+                <div class="player-section @(_c3a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c3.Name) { <span class="sh-first-badge">1°</span> }@_c3.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-horiz">
+                        @if (ShowCpuHandFaceUp(_c3.Id)) { @foreach (var c in CpuHandForDisplay(_c3)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c3.Id, _c3.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+                <div class="player-section @(_c2a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c2.Name) { <span class="sh-first-badge">1°</span> }@_c2.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-horiz">
+                        @if (ShowCpuHandFaceUp(_c2.Id)) { @foreach (var c in CpuHandForDisplay(_c2)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c2.Id, _c2.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+            </div>
+            <div class="seat-right-stack">
+                <div class="player-section seat-right @(_c1a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c1.Name) { <span class="sh-first-badge">1°</span> }@_c1.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-side">
+                        @if (ShowCpuHandFaceUp(_c1.Id)) { @foreach (var c in CpuHandForDisplay(_c1)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c1.Id, _c1.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+                <div class="player-section seat-right @(_c0a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c0.Name) { <span class="sh-first-badge">1°</span> }@_c0.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-side">
+                        @if (ShowCpuHandFaceUp(_c0.Id)) { @foreach (var c in CpuHandForDisplay(_c0)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c0.Id, _c0.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+            </div>
+        }
+        else if (UpperCpus.Count == 7)
+        {
+            var _c1 = UpperCpus[1]; var _c1a = IsCpuActive(_c1);
+            var _c2 = UpperCpus[2]; var _c2a = IsCpuActive(_c2);
+            var _c3 = UpperCpus[3]; var _c3a = IsCpuActive(_c3);
+            var _c4 = UpperCpus[4]; var _c4a = IsCpuActive(_c4);
+            var _c5 = UpperCpus[5]; var _c5a = IsCpuActive(_c5);
+            var _c6 = UpperCpus[6]; var _c6a = IsCpuActive(_c6);
+            <div class="seat-left-stack">
+                <div class="player-section seat-left @(_c5a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c5.Name) { <span class="sh-first-badge">1°</span> }@_c5.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-side">
+                        @if (ShowCpuHandFaceUp(_c5.Id)) { @foreach (var c in CpuHandForDisplay(_c5)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c5.Id, _c5.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+                <div class="player-section seat-left @(_c6a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c6.Name) { <span class="sh-first-badge">1°</span> }@_c6.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-side">
+                        @if (ShowCpuHandFaceUp(_c6.Id)) { @foreach (var c in CpuHandForDisplay(_c6)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c6.Id, _c6.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+            </div>
+            <div class="seat-top-pair">
+                <div class="player-section @(_c4a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c4.Name) { <span class="sh-first-badge">1°</span> }@_c4.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-horiz">
+                        @if (ShowCpuHandFaceUp(_c4.Id)) { @foreach (var c in CpuHandForDisplay(_c4)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c4.Id, _c4.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+                <div class="player-section @(_c3a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c3.Name) { <span class="sh-first-badge">1°</span> }@_c3.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-horiz">
+                        @if (ShowCpuHandFaceUp(_c3.Id)) { @foreach (var c in CpuHandForDisplay(_c3)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c3.Id, _c3.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+            </div>
+            <div class="seat-right-stack">
+                <div class="player-section seat-right @(_c2a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c2.Name) { <span class="sh-first-badge">1°</span> }@_c2.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-side">
+                        @if (ShowCpuHandFaceUp(_c2.Id)) { @foreach (var c in CpuHandForDisplay(_c2)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c2.Id, _c2.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+                <div class="player-section seat-right @(_c1a ? "active-player" : "")">
+                    <div class="section-title">@if (GameSvc.FirstPlayerName == _c1.Name) { <span class="sh-first-badge">1°</span> }@_c1.Name <span class="cpu-label">(@LangSvc.AiLabel)</span></div>
+                    <div class="hand hand-side">
+                        @if (ShowCpuHandFaceUp(_c1.Id)) { @foreach (var c in CpuHandForDisplay(_c1)) { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> } }
+                        else { @for (int i = 0; i < DealCardCount(_c1.Id, _c1.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            @for (int ci = 0; ci < UpperCpus.Count; ci++)
+            {
+                if (UpperCpus.Count >= 5 && ci == 2) continue; // top CPU rendered inside seat-center
+                var cpu = UpperCpus[ci];
+                string seat = GetSeat(ci, SimSeatCount);
+                bool isCpuActive = IsCpuActive(cpu);
+                bool isSide = seat is "left" or "right" or "top-left" or "top-right";
+                <div class="player-section seat-@seat @(isCpuActive ? "active-player" : "")">
+                    <div class="section-title">
+                        @if (GameSvc.FirstPlayerName == cpu.Name) { <span class="sh-first-badge">1°</span> }@cpu.Name <span class="cpu-label">(@LangSvc.AiLabel)</span>
+                    </div>
+                    <div class="hand @(isSide ? "hand-side" : "hand-horiz")">
+                        @if (ShowCpuHandFaceUp(cpu.Id))
+                        {
+                            @foreach (var c in CpuHandForDisplay(cpu))
+                            {
+                                <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div>
+                            }
+                        }
+                        else
+                        {
+                            @for (int i = 0; i < DealCardCount(cpu.Id, cpu.Hand.Count); i++)
+                            {
+                                <div class="card face-down"></div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        }
+
+        <!-- Center column: table area + player hand.
+             In 6-player the top-center CPU is also rendered here at the top. -->
+        <div class="seat-center">
+
+        @if (UpperCpus.Count >= 5 && UpperCpus.Count != 6 && UpperCpus.Count != 7)
+        {
+            var topCpu = UpperCpus[2];
+            bool isCpuActive = IsCpuActive(topCpu);
+            <div class="seat-top-inner">
+                <div class="player-section seat-top @(isCpuActive ? "active-player" : "")">
+                    <div class="section-title">
+                        @if (GameSvc.FirstPlayerName == topCpu.Name) { <span class="sh-first-badge">1°</span> }@topCpu.Name <span class="cpu-label">(@LangSvc.AiLabel)</span>
+                    </div>
+                    <div class="hand">
+                        @if (ShowCpuHandFaceUp(topCpu.Id))
+                        {
+                            @foreach (var c in CpuHandForDisplay(topCpu))
+                            {
+                                <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div>
+                            }
+                        }
+                        else
+                        {
+                            @for (int i = 0; i < DealCardCount(topCpu.Id, topCpu.Hand.Count); i++)
+                            {
+                                <div class="card face-down"></div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+<!-- Table -->
+        <div class="table-area @(IsTableDropTarget ? "drop-target-table" : "")"
+             @ondrop="OnDropToTable">
+
+            <div class="combos-scroll">
+            @if (GameSvc.State!.Table.Combinations.Count == 0)
+            {
+                <div class="empty-table">@LangSvc.EmptyTable</div>
+            }
+            else
+            {
+                var combos = GameSvc.State.Table.Combinations;
+                var draggedCard = _dragFrom >= 0 && _dragFrom < GameSvc.MainPlayer.Hand.Cards.Count
+                    ? GameSvc.MainPlayer.Hand.Cards[_dragFrom] : null;
+
+                int selCount = GameSvc.SelectedCards.Count;
+                // Single-card highlight (also gates swap detection)
+                bool showAddHighlight = !AnyDragging
+                    && GameSvc.Phase == GamePhase.AwaitingAction
+                    && selCount == 1;
+                // Multi-card highlight for 2+ selected cards
+                bool showMultiHighlight = !AnyDragging
+                    && GameSvc.Phase == GamePhase.AwaitingAction
+                    && selCount > 1;
+
+                <div class="combos-grid">
+                @foreach (var ci in Enumerable.Range(0, combos.Count)
+                    .Where(i => _cpuRevealComboCount < 0 || i < _cpuRevealComboCount || _cpuHiddenCards.ContainsKey(i)))
+                {
+                    var combo = combos[ci];
+                    var comboIdx = ci;
+                    var hiddenForCombo = _cpuHiddenCards.GetValueOrDefault(comboIdx);
+                    int cardLimit = hiddenForCombo != null ? combo.Cards.Count - hiddenForCombo.Count : combo.Cards.Count;
+                    bool isWinning = GameSvc.IsWinningMove(1);
+                    bool isWinningMulti = GameSvc.IsWinningMove(selCount);
+
+                    bool canAddSingle = showAddHighlight
+                        && combo.CanAccept(GameSvc.SelectedCards.First(), isWinning);
+                    bool canAddMulti = showMultiHighlight
+                        && combo.CanAcceptAll(GameSvc.SelectedCards.ToList(), isWinningMulti);
+
+                    bool canAddSelected = canAddSingle || canAddMulti;
+                    bool cannotAddSelected = (showAddHighlight && !canAddSingle) || (showMultiHighlight && !canAddMulti);
+
+                    bool isMultiDrag = draggedCard != null && selCount > 1
+                        && GameSvc.SelectedCards.Contains(draggedCard);
+                    bool isDragTarget = GameSvc.Phase == GamePhase.AwaitingAction && draggedCard != null
+                        && (GameSvc.SelectedCards.Count == 0
+                            || (GameSvc.SelectedCards.Count == 1 && GameSvc.SelectedCards.Contains(draggedCard))
+                            || isMultiDrag);
+                    bool isDropTarget = isDragTarget && (isMultiDrag
+                        ? combo.CanAcceptAll(GameSvc.SelectedCards.ToList(), isWinningMulti)
+                        : combo.CanAccept(draggedCard!, isWinning) || combo.CanReplaceJoker(draggedCard!));
+
+                    bool canSwap = showAddHighlight && combo.CanReplaceJoker(GameSvc.SelectedCards.First());
+                    bool canReturnJoker = showAddHighlight
+                        && GameSvc.SwappedJokerComboIndex == comboIdx
+                        && combo.CanReturnJoker(GameSvc.SelectedCards.First());
+
+                    bool actionable = GameSvc.Phase == GamePhase.AwaitingAction;
+                    bool isTriple = combo.Type == CombinationType.Triple;
+                    string rowClass = isDropTarget                             ? "combo-row drop-target clickable"
+                                    : canReturnJoker                           ? "combo-row combo-can-accept clickable"
+                                    : actionable                               ? "combo-row clickable"
+                                    :                                            "combo-row";
+
+                    int maxCapacity = isTriple ? Combination.MaxTripleSize : Combination.MaxSequenceSize;
+                    // Triples: each added card fills the leftmost ghost slot (count down from MaxTripleSize).
+                    // Sequences batch-cycle 3→2→1→3…
+                    // No ghost slots on the winning lay-down combo.
+                    // On a winning add-to-combo: suppress creating a new batch when the last ghost slot was
+                    // just filled (Count % 3 == 0 → would jump 1→3). Mid-batch adds (2→1 or 3→2) need no
+                    // special handling. Triples don't batch-cycle so no suppression needed there.
+                    bool suppressNewBatch = combo.IsWinningAddition && !isTriple && combo.Cards.Count % 3 == 0;
+                    // For NEW combos being revealed card-by-card: suppress ghost slots until all cards land.
+                    // For EXISTING combos being extended: base ghosts on cardLimit (visible count) so the
+                    // layout stays stable while the incoming card is in flight.
+                    bool revealInProgress = hiddenForCombo != null && hiddenForCombo.Count > 0;
+                    bool isNewCombo = _newComboIndices.Contains(comboIdx);
+                    int ghostBase = (revealInProgress && !isNewCombo) ? cardLimit : combo.Cards.Count;
+                    int batchGhostCount = combo.IsWinningLaydown || suppressNewBatch
+                        || ghostBase >= maxCapacity || (isNewCombo && revealInProgress)
+                        ? 0
+                        : isTriple ? maxCapacity - ghostBase
+                                   : Math.Min((ghostBase / 3 + 1) * 3 - ghostBase,
+                                              maxCapacity - ghostBase);
+                    double seqStep = _combosShrunk ? 0.33 : 0.5;
+                    double ghostStep = isTriple ? 0.33 : seqStep;
+                    double ghostStart = isTriple
+                        ? 2.0 + Math.Max(0, ghostBase - 3) * 0.33
+                        : 1.0 + (ghostBase - 1) * seqStep;
+                    double ghostPad = batchGhostCount > 0 && !isTriple
+                        ? (batchGhostCount - 1) * seqStep + seqStep
+                        : 0.0;
+                    var inv = System.Globalization.CultureInfo.InvariantCulture;
+                    string comboRowStyle = $"--ghost-start:{ghostStart.ToString("F2", inv)};--ghost-step:{ghostStep.ToString("F2", inv)};--combo-ghost-pad:{ghostPad.ToString("F2", inv)}";
+
+                    <div class="@rowClass"
+                         style="@comboRowStyle"
+                         data-combo-idx="@comboIdx"
+                         @ondrop:stopPropagation="isDropTarget"
+                         @ondrop="() => OnDropToCombo(comboIdx, isDropTarget)"
+                         @onclick="() => OnComboRowClick(comboIdx)">
+                        @foreach (var tableCard in combo.Cards.Where(c => hiddenForCombo == null || !hiddenForCombo.Contains(c)))
+                        {
+                            bool swappable = canSwap && tableCard.IsJoker;
+                            bool isBurnCard = GameSvc.TripleDiscardsPending.Any(t => t.ComboIndex == comboIdx && ReferenceEquals(t.Card, tableCard))
+                                           || GameSvc.CpuTripleDiscardsPending.Any(t => t.ComboIndex == comboIdx && ReferenceEquals(t.Card, tableCard));
+                            <div @key="tableCard"
+                                 class="card @CardClass(tableCard) @(swappable ? "joker-swappable" : "") @(isBurnCard ? "card-triple-burn" : "")"
+                                 @onclick:stopPropagation="swappable"
+                                 @onclick="() => OnTableCardClick(comboIdx, swappable)">
+                                <CardDisplay Card="tableCard" />
+                            </div>
+                        }
+                        @for (int g = 0; g < batchGhostCount; g++)
+                        {
+                            if (isTriple)
+                            {
+                                // Flex item — no absolute positioning, always visible
+                                <div class="card-ghost-triple"></div>
+                            }
+                            else
+                            {
+                                <div class="card card-ghost" style="--ghost-i:@g"></div>
+                            }
+                        }
+                        <span class="combo-label">@(GameSvc.AllPlayers.FirstOrDefault(p => p.Id == combo.OwnerId)?.Name ?? LangSvc.AiLabel)</span>
+                        @if (canReturnJoker)
+                        {
+                            <span class="combo-add-badge swap-badge">@LangSvc.ReturnJokerBadge</span>
+                        }
+                    </div>
+                }
+                </div>
+            }
+            </div><!-- /combos-scroll -->
+
+            <!-- Deck and discard piles -->
+            <div class="piles-row">
+                <div class="pile">
+                    @{
+                        bool deckDraggable = GameSvc.Phase == GamePhase.AwaitingDraw && _dealRevealCounts.Count == 0;
+                        bool deckReturnTarget = GameSvc.Phase == GamePhase.AwaitingAction && GameSvc.HasUnusedDiscardCard && _dragFrom >= 0;
+                    }
+                    <div class="deck-drop-zone @(deckReturnTarget ? "drop-target" : "")"
+                         @ondrop="OnDropToDeck">
+                        <div class="card face-down @(deckDraggable ? "clickable" : "")"
+                             draggable="@(deckDraggable ? "true" : "false")"
+                             @onclick="DoDraw"
+                             @ondragstart="OnDragStartDeck"
+                             @ondragend="OnDragEnd">
+                        </div>
+                    </div>
+                </div>
+                <div class="pile @(GameSvc.HasSecondDrawPrivilege ? "second-draw-active" : "") @(GameSvc.HasUnusedDiscardCard ? "return-card-active" : "")">
+                    @if (GameSvc.HasSecondDrawPrivilege)
+                    {
+                        <div class="second-draw-badge">@LangSvc.SecondDrawHint</div>
+                    }
+                    @if (GameSvc.HasUnusedDiscardCard)
+                    {
+                        <button class="return-card-btn" @onclick="() => GameSvc.ReturnDiscardCard()">@LangSvc.ReturnCardBadge</button>
+                    }
+                    <div class="discard-drop-zone @(IsDiscardDropTarget ? "drop-target" : "")"
+                         @ondrop="OnDropToDiscard">
+                        <div class="pile-stack">
+                            @if (GameSvc.State.Deck.DiscardTop != null)
+                            {
+                                var top = GameSvc.State.Deck.DiscardTop;
+                                bool discardClickable = GameSvc.Phase == GamePhase.AwaitingDraw && !GameSvc.MustDrawFromDeck && _dealRevealCounts.Count == 0;
+                                var allDiscard = GameSvc.State.Deck.DiscardPeek(GameSvc.State.Deck.DiscardPileCount);
+                                @for (int gi = 0; gi < allDiscard.Count - 1; gi++)
+                                {
+                                    var g = allDiscard[gi];
+                                    <div class="card @CardClass(g) pile-ghost" style="--pile-rot:@(DiscardAngle(g))deg"><CardDisplay Card="g" /></div>
+                                }
+                                <div @key="top" class="card @CardClass(top) discard-top @(discardClickable ? "clickable" : "")"
+                                     style="--pile-rot:@(DiscardAngle(top))deg"
+                                     draggable="@(discardClickable ? "true" : "false")"
+                                     @onclick="DoDrawDiscard"
+                                     @ondragstart="OnDragStartDiscard"
+                                     @ondragend="OnDragEnd"><CardDisplay Card="top" /></div>
+                            }
+                            else
+                            {
+                                <div class="card empty-pile">@LangSvc.Empty</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom row: [bottom-left CPU (7+ players)] + player hand + [bottom-right CPU (8 players)] -->
+        <div class="seat-bottom-row">
+
+        <div class="seat-bottom">
+
+        @if (IsSimulationLayout && ActiveCpus.Count > 0)
+        {
+            var simBottomCpu = ActiveCpus[0];
+            bool simBottomActive = IsCpuActive(simBottomCpu);
+            <div class="player-section @(simBottomActive ? "active-player" : "")">
+                <div class="section-title">
+                    @if (GameSvc.FirstPlayerName == simBottomCpu.Name) { <span class="sh-first-badge">1°</span> }@simBottomCpu.Name <span class="cpu-label">(@LangSvc.AiLabel)</span>
+                </div>
+                <div class="hand hand-horiz">
+                    @if (ShowCpuHandFaceUp(simBottomCpu.Id))
+                    {
+                        @foreach (var c in CpuHandForDisplay(simBottomCpu))
+                        {
+                            <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div>
+                        }
+                    }
+                    else
+                    {
+                        @for (int i = 0; i < DealCardCount(simBottomCpu.Id, simBottomCpu.Hand.Count); i++) { <div class="card face-down"></div> }
+                    }
+                </div>
+            </div>
+        }
+        else if (IsSimulationLayout)
+        {
+            <!-- Player eliminated — show name only, no cards -->
+            <div class="player-section sim-eliminated">
+                <div class="section-title">@GameSvc.MainPlayer.Name</div>
+                <div class="hand hand-horiz"></div>
+            </div>
+        }
+        else
+        {
+            <!-- Player hand -->
+            bool isMainPlayerActive = GameSvc.Phase is GamePhase.AwaitingDraw or GamePhase.AwaitingAction;
+            <div class="player-section @(IsHandDropTarget ? "drop-target-hand" : "") @(isMainPlayerActive ? "active-player" : "")"
+                 @ondrop="OnDropToHandSection">
+                <div class="section-title">
+                    @if (GameSvc.IsMainPlayerFirst) { <span class="sh-first-badge">1°</span> }@GameSvc.MainPlayer.Name
+                </div>
+                <div class="hand">
+                    <div class="hand-endzone @(AnyDragging ? "visible" : "")"
+                         @ondrop:stopPropagation="true"
+                         @ondrop="OnDropToStart"></div>
+                    <div class="hand-fan">
+                    @for (int hi = 0; hi < DealCardCount(GameSvc.MainPlayer.Id, GameSvc.MainPlayer.Hand.Cards.Count); hi++)
+                    {
+                        var card = GameSvc.MainPlayer.Hand.Cards[hi];
+                        var idx = hi;
+                        bool sel = GameSvc.SelectedCards.Contains(card);
+                        bool dragging = _dragFrom >= 0 && (_dragFrom == idx || GameSvc.SelectedCards.Contains(card));
+                        bool justDrawn = ReferenceEquals(card, _justDrawnCard);
+                        <div class="card @CardClass(card) @(sel ? "selected" : "") @(dragging ? "dragging" : "") @(justDrawn ? "card-drawn-in" : "")"
+                             draggable="true"
+                             data-rank="@((int)card.Rank)"
+                             @onclick="() => DoToggleCard(card)"
+                             @ondragstart="() => OnDragStart(idx)"
+                             @ondrop:stopPropagation="true"
+                             @ondrop="() => OnDropOnHandCard(idx)"
+                             @ondragend="OnDragEnd"><CardDisplay Card="card" /></div>
+                    }
+                    </div>
+                    <div class="hand-endzone @(AnyDragging ? "visible" : "")"
+                         @ondrop:stopPropagation="true"
+                         @ondrop="OnDropToEnd"></div>
+                </div>
+            </div>
+        }
+
+        </div> <!-- /seat-bottom -->
+
+        @if (UpperCpus.Count >= 7)
+        {
+            var brCpu = UpperCpus[0]; // anti-clockwise: CPU 0 is immediately to the right of the player
+            bool brActive = IsCpuActive(brCpu);
+            <div class="seat-bottom-side side-right">
+                <div class="player-section @(brActive ? "active-player" : "")">
+                    <div class="section-title">
+                        @if (GameSvc.FirstPlayerName == brCpu.Name) { <span class="sh-first-badge">1°</span> }@brCpu.Name <span class="cpu-label">(@LangSvc.AiLabel)</span>
+                    </div>
+                    <div class="hand hand-horiz">
+                        @if (ShowCpuHandFaceUp(brCpu.Id))
+                        {
+                            @foreach (var c in CpuHandForDisplay(brCpu))
+                            { <div @key="c" class="card @HandCardClass(c)"><CardDisplay Card="c" /></div> }
+                        }
+                        else
+                        { @for (int i = 0; i < DealCardCount(brCpu.Id, brCpu.Hand.Count); i++) { <div class="card face-down"></div> } }
+                    </div>
+                </div>
+            </div>
+        }
+
+        </div> <!-- /seat-bottom-row -->
+
+        </div> <!-- /seat-center -->
+        </div> <!-- /game-table -->
+
+        </div> <!-- /game-table-wrap -->
+
+        <!-- Results panel slot — table visible whenever there is history; buttons only at round/game end -->
+        @{
+            bool isGameOver = GameSvc.GameWinner != null || GameSvc.PendingGameWinner != null;
+            var gameOverWinner = GameSvc.GameWinner ?? GameSvc.PendingGameWinner;
+            var histPlayers = GameSvc.AllPlayers;
+            var history = GameSvc.RoundHistory;
+            bool isRoundEnd = !_cpuRunning && GameSvc.Phase is GamePhase.RoundOver or GamePhase.GameOver;
+        }
+        <div class="game-results-slot">
+            <div class="round-over-panel">
+                <div class="score-history-wrap">
+                    <table class="score-history">
+                        <thead>
+                            <tr>
+                                <th class="sh-round">#</th>
+                                @foreach (var p in histPlayers)
+                                {
+                                    <th title="@p.Name">@p.Name</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var rec in history)
+                            {
+                                <tr>
+                                    <td class="sh-round">@rec.Round</td>
+                                    @foreach (var p in histPlayers)
+                                    {
+                                        bool played = rec.Penalties.TryGetValue(p.Id, out var pv);
+                                        int pen = played ? pv : 0;
+                                        bool isWinner = played && pen == 0;
+                                        bool isFirst = rec.FirstPlayerId == p.Id;
+                                        <td class="@(!played ? "sh-absent" : isWinner ? "sh-win" : "sh-lose")">
+                                            <span class="sh-penalty">@(!played ? "—" : isWinner ? "–" : $"{pen}")</span>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                            @if (!isRoundEnd)
+                            {
+                                <tr class="sh-current">
+                                    <td class="sh-round">@GameSvc.RoundNumber</td>
+                                    @foreach (var p in histPlayers)
+                                    {
+                                        <td>—</td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="sh-footer">
+                                <td class="sh-round"></td>
+                                @foreach (var p in histPlayers)
+                                {
+                                    int total = p.Score;
+                                    bool isGameWinner = GameSvc.GameWinner?.Id == p.Id;
+                                    <td class="@(isGameWinner ? "sh-win" : total >= 100 ? "sh-elim" : "")">@(total >= 100 && !isGameWinner ? "❌" : total)</td>
+                                }
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                @if (GameSvc.IsSimulationMode && !isGameOver)
+                {
+                    <button class="btn-skip-sim" @onclick="SkipSimulation">@LangSvc.SkipSimBtn</button>
+                }
+                <div class="panel-messages-area">
+                    @if (GameSvc.Message != null)
+                    {
+                        <span class="panel-message">@GameSvc.Message</span>
+                    }
+                    @if (GameSvc.ErrorMessage != null)
+                    {
+                        <span class="panel-message error">@GameSvc.ErrorMessage</span>
+                    }
+                </div>
+                @if (isRoundEnd)
+                {
+                    @if (isGameOver)
+                    {
+                        <button class="btn-primary" @onclick="DoStartGame">@LangSvc.NewGame</button>
+                    }
+                    else
+                    {
+                        <button class="btn-primary" @onclick="OnNextRoundClick">@LangSvc.NextRound (@_countdown)</button>
+                    }
+                }
+            </div>
+        </div> <!-- /game-results-slot -->
+
+        </div> <!-- /game-layout -->
+    }
+
+</div>
+
+@if (_secondDrawToast != null)
+{
+    <div class="second-draw-toast" @onclick="() => _secondDrawToast = null">
+        @_secondDrawToast
+    </div>
+}
+@if (_lastCardToast != null)
+{
+    <div class="last-card-toast" @onclick="() => { _lastCardToast = null; _lastCardToastVersion++; }">
+        @_lastCardToast
+    </div>
+}
+
+@if (_roundEndToast != null)
+{
+    <div class="round-end-toast @(_roundEndToastWin ? "win" : "lose")">
+        @_roundEndToast
+    </div>
+}
+@if (_gameEndToast != null)
+{
+    <div class="game-end-toast @(_gameEndToastWin ? "win" : "lose")">
+        @_gameEndToast
+        @if (!_gameEndToastWin)
+        {
+            <span class="game-end-toast-icon">🪦</span>
+        }
+    </div>
+}
+
+
+@if (_showRules)
+{
+    <div class="modal-overlay" @onclick="() => _showRules = false">
+        <div class="modal-box rules-modal" @onclick:stopPropagation="true">
+            <h3>@LangSvc.RulesTitle</h3>
+            <div class="rules-body">
+                <div class="rules-section">
+                    <div class="rules-section-title">@LangSvc.RulesDeckTitle</div>
+                    <p>@LangSvc.RulesDeckBody</p>
+                </div>
+                <div class="rules-section">
+                    <div class="rules-section-title">@LangSvc.RulesCombosTitle</div>
+                    @foreach (var line in LangSvc.RulesCombosBody.Split('\n'))
+                    {
+                        <p>@line</p>
+                    }
+                </div>
+                <div class="rules-section">
+                    <div class="rules-section-title">@LangSvc.RulesJokersTitle</div>
+                    @foreach (var line in LangSvc.RulesJokersBody.Split('\n'))
+                    {
+                        <p>@line</p>
+                    }
+                </div>
+                <div class="rules-section">
+                    <div class="rules-section-title">@LangSvc.RulesDrawTitle</div>
+                    @foreach (var line in LangSvc.RulesDrawBody.Split('\n'))
+                    {
+                        <p>@line</p>
+                    }
+                </div>
+                <div class="rules-section">
+                    <div class="rules-section-title">@LangSvc.RulesWinTitle</div>
+                    @foreach (var line in LangSvc.RulesWinBody.Split('\n'))
+                    {
+                        <p>@line</p>
+                    }
+                </div>
+                <div class="rules-section">
+                    <div class="rules-section-title">@LangSvc.RulesPointsTitle</div>
+                    @foreach (var line in LangSvc.RulesPointsBody.Split('\n'))
+                    {
+                        <p>@line</p>
+                    }
+                </div>
+            </div>
+            <button class="btn-primary" @onclick="() => _showRules = false">@LangSvc.RulesClose</button>
+        </div>
+    </div>
+}
+
+@if (_showAbout)
+{
+    <div class="modal-overlay" @onclick="() => _showAbout = false">
+        <div class="modal-box about-modal" @onclick:stopPropagation="true">
+            <h3>@LangSvc.AboutTitle</h3>
+            <div class="about-body">
+                <div class="about-section">
+                    <div class="about-label">@LangSvc.AboutCreatedBy</div>
+                    <div class="about-value">Mauricio Grisa</div>
+                </div>
+                <div class="about-section">
+                    <div class="about-label">@LangSvc.AboutLicenseTitle</div>
+                    <p class="about-license-text">@LangSvc.AboutLicenseBody</p>
+                    <p class="about-license-spdx">MIT License · Copyright © 2026 Mauricio Grisa</p>
+                </div>
+            </div>
+            <button class="btn-primary" @onclick="() => _showAbout = false">@LangSvc.AboutClose</button>
+        </div>
+    </div>
+}
+
+@if (_showQuitConfirm)
+{
+    <div class="modal-overlay" @onclick="() => _showQuitConfirm = false">
+        <div class="modal-box quit-modal" @onclick:stopPropagation="true">
+            <h3>@LangSvc.QuitConfirmTitle</h3>
+            <p class="quit-confirm-msg">@LangSvc.QuitConfirmMsg</p>
+            <div class="quit-modal-btns">
+                <button class="btn-secondary" @onclick="() => _showQuitConfirm = false">@LangSvc.QuitConfirmNo</button>
+                <button class="btn-danger" @onclick="DoQuit">@LangSvc.QuitConfirmYes</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private DotNetObjectReference<Game>? _dotNetRef;
+
+    // Called by JS when a hand card is dropped on another hand card (reorder).
+    // Bypasses Blazor event delegation so synthetic DragEvents in tests also work.
+    [JSInvokable]
+    public void HandleHandCardDrop(int from, int target)
+    {
+        if (from >= 0 && target >= 0)
+            GameSvc.ReorderHand(from, target);
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Called by JS (E2E tests) to discard the first non-joker hand card.
+    // Bypasses Blazor drag-drop event delegation which doesn't fire for synthetic events.
+    [JSInvokable]
+    public async Task HandleDiscardFirstCard()
+    {
+        if (GameSvc.Phase != GamePhase.AwaitingAction) return;
+        var card = GameSvc.MainPlayer.Hand.Cards.FirstOrDefault(c => !c.IsJoker);
+        if (card == null) return;
+        GameSvc.SelectOnly(card);
+        await InvokeAsync(DoDiscard);
+    }
+
+    [JSInvokable]
+    public int GetTripleDiscardsPendingCount() => GameSvc.TripleDiscardsPending.Count;
+
+    // Test hook: adds a triple + duplicate-suit card and calls TryAddToCombo so that
+    // the next DoDiscard will call burnComboCards. Returns the combo index, or -1 on failure.
+    [JSInvokable]
+    public async Task<int> SetupBurnTestScenario()
+    {
+        if (GameSvc.Phase != GamePhase.AwaitingAction) return -1;
+        var tripleCards = new List<Card>
+        {
+            new Card(Rank.Five, Suit.Clubs),
+            new Card(Rank.Five, Suit.Hearts),
+            new Card(Rank.Five, Suit.Spades)
+        };
+        GameSvc.State!.Table.AddCombination(new Combination(tripleCards, CombinationType.Triple, "test"));
+        int comboIdx = GameSvc.State.Table.Combinations.Count - 1;
+        var dupCard = new Card(Rank.Five, Suit.Clubs);
+        GameSvc.MainPlayer.Hand.Add(dupCard);
+        GameSvc.SelectOnly(dupCard);
+        GameSvc.TryAddToCombo(comboIdx);
+        await InvokeAsync(StateHasChanged);
+        return comboIdx;
+    }
+
+    // Test hook: adds [9♣,10♣,J♣] to the table, sets the first CPU's hand to
+    // [JKR, 7♣, 6♣], and places 2♦ on top of the draw pile so the CPU draws it.
+    // Designed to trigger the DrainSingleCardAdds-after-multi-card-table-add path:
+    //   - 6♣ cannot be added to [9♣,10♣,J♣] alone (gap too large).
+    //   - [JKR, 7♣] extends it to [7♣,JKR,9♣,10♣,J♣] via TryWinByMultiCardTableAdd.
+    //   - DrainSingleCardAdds (second call) then adds 6♣ → CPU wins the round.
+    // Returns the combo index, or -1 on failure.
+    [JSInvokable]
+    public async Task<int> SetupDrainSingleCardAddsScenario()
+    {
+        if (GameSvc.Phase != GamePhase.AwaitingAction) return -1;
+        var cpu = GameSvc.RoundCpus.FirstOrDefault();
+        if (cpu == null) return -1;
+
+        var seqCards = new List<Card>
+        {
+            new Card(Rank.Nine,  Suit.Clubs),
+            new Card(Rank.Ten,   Suit.Clubs),
+            new Card(Rank.Jack,  Suit.Clubs)
+        };
+        GameSvc.State!.Table.AddCombination(new Combination(seqCards, CombinationType.Sequence, "test"));
+        int comboIdx = GameSvc.State.Table.Combinations.Count - 1;
+
+        cpu.Hand.Clear();
+        cpu.Hand.Add(new Card(Rank.Joker, Suit.Clubs));
+        cpu.Hand.Add(new Card(Rank.Seven, Suit.Clubs));
+        cpu.Hand.Add(new Card(Rank.Six,   Suit.Clubs));
+
+        // CPU will draw this card next, giving hand [JKR, 7♣, 6♣, 2♦].
+        GameSvc.State.Deck.AddToDrawTop(new Card(Rank.Two, Suit.Diamonds));
+
+        await InvokeAsync(StateHasChanged);
+        return comboIdx;
+    }
+
+    // Test hook: gives the first CPU two complete combos ([5♥,6♥,7♥] and [Q♠,Q♥,Q♦])
+    // and places 2♦ on top of the draw pile. After drawing, the CPU lays both combos
+    // simultaneously and discards 2♦, winning the round.
+    // Returns the number of combos on the table before the CPU turn.
+    [JSInvokable]
+    public async Task<int> SetupMultiComboLayDownScenario()
+    {
+        if (GameSvc.Phase != GamePhase.AwaitingAction) return -1;
+        var cpu = GameSvc.RoundCpus.FirstOrDefault();
+        if (cpu == null) return -1;
+
+        cpu.Hand.Clear();
+        cpu.Hand.Add(new Card(Rank.Five,  Suit.Hearts));
+        cpu.Hand.Add(new Card(Rank.Six,   Suit.Hearts));
+        cpu.Hand.Add(new Card(Rank.Seven, Suit.Hearts));
+        cpu.Hand.Add(new Card(Rank.Queen, Suit.Spades));
+        cpu.Hand.Add(new Card(Rank.Queen, Suit.Hearts));
+        cpu.Hand.Add(new Card(Rank.Queen, Suit.Diamonds));
+
+        // CPU draws 2♦ → hand = [5♥,6♥,7♥,Q♠,Q♥,Q♦,2♦]; lays both combos, discards 2♦.
+        GameSvc.State!.Deck.AddToDrawTop(new Card(Rank.Two, Suit.Diamonds));
+
+        int combosBefore = GameSvc.State.Table.Combinations.Count;
+        await InvokeAsync(StateHasChanged);
+        return combosBefore;
+    }
+
+    [JSInvokable]
+    public async Task<bool> SetupDiscardDrawScenario()
+    {
+        if (GameSvc.Phase != GamePhase.AwaitingDraw || GameSvc.State == null) return false;
+        GameSvc.State.Deck.AddToDiscard(new Card(Rank.Five, Suit.Hearts));
+        await InvokeAsync(StateHasChanged);
+        return true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _countdownCts?.Cancel();
+        _simCts.Cancel();
+        _gameCts.Cancel();
+        _dotNetRef?.Dispose();
+        await Task.CompletedTask;
+    }
+
+    private bool _skipRender = false;
+    protected override bool ShouldRender() { if (_skipRender) { _skipRender = false; return false; } return true; }
+
+    private int _dragFrom = -1;
+    private bool _draggingFromDeck = false;
+    private bool _draggingFromDiscard = false;
+    private bool _cpuRunning = false;   // true while RunCpuTurns is executing; blocks user drag actions
+    private bool _tableExpanded  = true;
+    private bool _combosShrunk   = false;
+    private bool _showGhostSlots = false;
+    private int  _lastComboCount = -1;
+    private readonly Dictionary<Card, int> _discardAngles = new(ReferenceEqualityComparer.Instance);
+    private readonly Random _discardAngleRng = new();
+    private int  _cpuRevealComboCount = -1; // -1 = show all; >=0 = cap during CPU lay-down animation
+    private Dictionary<int, HashSet<Card>> _cpuHiddenCards = new(); // comboIdx → hidden card refs during CPU add animation
+    private HashSet<int> _newComboIndices = new();              // combos being revealed from scratch (vs extended)
+    private int    _cpuHandBonus = 0;       // extra face-down cards to show for animating CPU (cards still in flight)
+    private string? _animatingCpuId;        // ID of the CPU whose hand displays the bonus
+    private bool _showRules       = false;
+    private bool _showAbout       = false;
+    private bool _showQuitConfirm = false;
+    private bool _soundEnabled    = true;
+    private int _countdown = 0;
+    private CancellationTokenSource? _countdownCts;
+    private bool _roundAdvancing = false;
+    private bool _simulationEstablished = false; // true after the first DoAdvanceRound in simulation mode
+    private List<Card>? _simAnimatingHandCards = null; // pre-play face-up hand snapshot for sim-mode card animation
+    private HashSet<Card> _simHandGoneCards = new(ReferenceEqualityComparer.Instance); // cards that have flown out — kept in DOM for layout stability
+    private bool _fireworksTriggered  = false;
+    private bool _ashesTriggered      = false;
+    private bool _eliminatedMidGame     = false; // player reached 100 pts while game was still ongoing
+    private bool _gameOverAshesTriggered = false; // silent ashes at game-over after simulation
+    private CancellationTokenSource _simCts  = new(); // cancelled by SkipSimulation
+    private CancellationTokenSource _gameCts = new(); // cancelled on quit; recreated on new game
+
+    // Last-card toast
+    private Card? _justDrawnCard;
+    private Dictionary<string, int> _dealRevealCounts = new();
+    private string? _secondDrawToast;
+    private string? _lastCardToast;
+    private int _lastCardToastVersion;
+    private string? _roundEndToast;
+    private bool _roundEndToastWin;
+    private int _lastRoundToastRound = 0;
+    private string? _gameEndToast;
+    private bool _gameEndToastWin;
+    private bool _gameEndToastTriggered;
+    private readonly HashSet<string> _alertedLastCard = new();
+    private int _lastTrackedRound = 0;
+
+    // True whenever anything is being dragged (for end-zone visibility etc.)
+    private bool AnyDragging => _dragFrom >= 0 || _draggingFromDeck || _draggingFromDiscard;
+
+    private record SavedSettings(string PlayerName, int CpuCount, string Language);
+
+    private int DealCardCount(string playerId, int actualCount)
+    {
+        int total = actualCount + (playerId == _animatingCpuId ? _cpuHandBonus : 0);
+        if (_dealRevealCounts.Count == 0) return total;
+        return _dealRevealCounts.TryGetValue(playerId, out var limit) ? limit : 0;
+    }
+
+    private async Task PlayDealAnimation(CancellationToken ct = default)
+    {
+        var players = GameSvc.State!.Players;
+        int n = players.Length;
+        _dealRevealCounts = players.ToDictionary(p => p.Id, _ => 0);
+        StateHasChanged();
+        try
+        {
+            await Task.Delay(16, ct); // initial render with all hands empty
+
+            var firstId = GameSvc.FirstPlayerId;
+            int startIdx = 0;
+            for (int i = 0; i < n; i++)
+                if (players[i].Id == firstId) { startIdx = i; break; }
+
+            for (int card = 0; card < 9; card++)
+            {
+                for (int offset = 0; offset < n; offset++)
+                {
+                    var player = players[(startIdx + offset) % n];
+                    _dealRevealCounts[player.Id]++;
+                    StateHasChanged();
+                    await Task.Delay(60, ct);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            _dealRevealCounts.Clear();
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowLastCardToast(string message, string sound = "playLastCardSound")
+    {
+        _secondDrawToast = null;
+        _lastCardToast = message;
+        var version = ++_lastCardToastVersion;
+        await JS.InvokeVoidAsync(sound);
+        StateHasChanged();
+        await Task.Delay(6000);
+        await InvokeAsync(() =>
+        {
+            if (_lastCardToastVersion == version)
+            {
+                _lastCardToast = null;
+                StateHasChanged();
+            }
+        });
+    }
+
+    private async Task ShowRoundEndToast(bool playerWon, string winnerName, bool playSound)
+    {
+        // Dismiss any lingering toasts so they don't overlap.
+        _secondDrawToast = null;
+        _lastCardToast = null;
+        _lastCardToastVersion++;
+
+        _roundEndToastWin = playerWon;
+        _roundEndToast = playerWon ? LangSvc.ToastRoundWin : LangSvc.ToastRoundLose(winnerName);
+        if (playSound)
+            await JS.InvokeVoidAsync(playerWon ? "playRoundWinSound" : "playRoundLoseSound");
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            // Level 2: shrink card spacing to 33% when combos overflow.
+            // Track total cards on table (not just combo count) so adding to existing combos also triggers.
+            if (!_combosShrunk)
+            {
+                int count = GameSvc.State?.Table.Combinations.Sum(c => c.Cards.Count) ?? 0;
+                if (count != _lastComboCount)
+                {
+                    _lastComboCount = count;
+                    bool overflow = await JS.InvokeAsync<bool>("checkCombosOverflow");
+                    if (overflow) { _combosShrunk = true; StateHasChanged(); }
+                }
+            }
+
+            // Detect N→1 card transitions for any opponent.
+            if (GameSvc.Phase != GamePhase.Welcome)
+            {
+                if (GameSvc.RoundNumber != _lastTrackedRound)
+                {
+                    _lastTrackedRound = GameSvc.RoundNumber;
+                    _alertedLastCard.Clear();
+                }
+            }
+
+            // Round-end toast: fires once per round when Phase first reaches RoundOver.
+            // Skipped on the final round — the game-end toast handles that case.
+            // Deferred while _cpuRunning so a joker-swap toast can finish before the round-end
+            // toast overrides it (CPU wins via swap + lay-down in the same turn).
+            if (GameSvc.Phase == GamePhase.RoundOver
+                && GameSvc.RoundNumber != _lastRoundToastRound
+                && GameSvc.LastPlayedPlayerId != null
+                && GameSvc.PendingGameWinner == null
+                && !_cpuRunning)
+            {
+                _lastRoundToastRound = GameSvc.RoundNumber;
+                bool playerWon = GameSvc.LastPlayedPlayerId == GameSvc.MainPlayer.Id;
+                string winnerName = GameSvc.AllPlayers.FirstOrDefault(p => p.Id == GameSvc.LastPlayedPlayerId)?.Name ?? "";
+                _ = ShowRoundEndToast(playerWon, winnerName, playSound: true);
+            }
+
+            // Fireworks when the main player wins; falling ashes when they are eliminated.
+            // All animation triggers are suppressed on the Welcome screen (e.g. user quit before
+            // OnAfterRenderAsync fired, leaving _ashesTriggered false with Score still >= 100).
+            var gameWinner = GameSvc.GameWinner ?? GameSvc.PendingGameWinner;
+            if (GameSvc.Phase != GamePhase.Welcome)
+            {
+                if (!_fireworksTriggered && gameWinner?.Id == GameSvc.MainPlayer.Id)
+                {
+                    _fireworksTriggered = true;
+                    await JS.InvokeVoidAsync("startFireworks");
+                }
+                if (GameSvc.MainPlayer.Score >= 100 && gameWinner == null && !_eliminatedMidGame)
+                    _eliminatedMidGame = true; // player eliminated before the final round
+
+                // Ashes + sound when player is eliminated (whether or not game is over)
+                if (!_ashesTriggered && GameSvc.MainPlayer.Score >= 100
+                    && _animatingCpuId == null && _cpuRevealComboCount < 0)
+                {
+                    _ashesTriggered = true;
+                    await JS.InvokeVoidAsync("startAshes");
+                    await JS.InvokeVoidAsync("playGameLoseSound");
+                }
+
+                // At game-over after simulation: restart ashes with sound
+                if (_eliminatedMidGame && gameWinner != null && !_gameOverAshesTriggered)
+                {
+                    _gameOverAshesTriggered = true;
+                    await JS.InvokeVoidAsync("startAshes");
+                    await JS.InvokeVoidAsync("playGameLoseSound");
+                }
+            }
+
+            // Game-end toast: fires once when the game outcome is determined.
+            if (!_gameEndToastTriggered && gameWinner != null
+                && _animatingCpuId == null && _cpuRevealComboCount < 0)
+            {
+                _gameEndToastTriggered = true;
+                _gameEndToastWin = gameWinner.Id == GameSvc.MainPlayer.Id;
+                _gameEndToast = _gameEndToastWin
+                    ? LangSvc.YouWinGame
+                    : LangSvc.YouLoseGame(gameWinner.Name);
+                StateHasChanged();
+            }
+            return;
+        }
+
+        // Register DotNet reference for JS-initiated hand-card drag reorder.
+        _dotNetRef ??= DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("registerHandDropHandler", _dotNetRef);
+
+        // Try to restore saved settings; fall back to browser language detection.
+        var saved = await JS.InvokeAsync<SavedSettings?>("loadSettings");
+        if (saved != null)
+        {
+            GameSvc.PlayerName = saved.PlayerName;
+            if (saved.CpuCount is >= 1 and <= 7) GameSvc.CpuCount = saved.CpuCount;
+            LangSvc.Set(saved.Language == "Portuguese" ? AppLanguage.Portuguese : AppLanguage.English);
+        }
+        else
+        {
+            var browserLang = await JS.InvokeAsync<string>("getNavigatorLanguage");
+            if (browserLang.StartsWith("pt", StringComparison.OrdinalIgnoreCase))
+                LangSvc.Set(AppLanguage.Portuguese);
+        }
+        StateHasChanged();
+    }
+
+    private async Task SaveSettings()
+    {
+        var settings = new SavedSettings(
+            GameSvc.PlayerName,
+            GameSvc.CpuCount,
+            LangSvc.Language.ToString());
+        await JS.InvokeVoidAsync("saveSettings", settings);
+    }
+
+    private IReadOnlyList<CpuPlayer> ActiveCpus => GameSvc.RoundCpus;
+
+    // Show CPU hands face-up only after deal animation completes.
+    private bool ShowCpuHandFaceUp(string cpuId) =>
+        _dealRevealCounts.Count == 0
+        && ((!_cpuRunning && GameSvc.Phase is GamePhase.RoundOver or GamePhase.GameOver)
+            || GameSvc.IsSimulationMode);
+
+    // Equals the number of CPUs in the upper section. Used by GetSeat to assign seats.
+    // In simulation layout mode, UpperCpus defines the upper seats directly.
+    // Outside simulation layout, ActiveLayoutCount - 1 gives the equivalent count.
+    private int SimSeatCount => IsSimulationLayout ? UpperCpus.Count : GameSvc.ActiveLayoutCount - 1;
+
+    // Layout switches to simulation mode after RoundOver so the player's section stays visible
+    // during the elimination round-over display — avoids a jarring layout shift mid-animation.
+    // Phase != RoundOver guard only applies on the elimination round-over (before _simulationEstablished).
+    // Once established, simulation layout is kept during all subsequent round-overs.
+    private bool IsSimulationLayout => GameSvc.IsSimulationMode && (_simulationEstablished || GameSvc.Phase != GamePhase.RoundOver);
+
+    // In simulation mode CPU 0 occupies seat-bottom; the remaining CPUs fill the upper positions.
+    // Outside simulation this is identical to ActiveCpus.
+    private IReadOnlyList<CpuPlayer> UpperCpus => IsSimulationLayout && ActiveCpus.Count > 0
+        ? ActiveCpus.Skip(1).ToArray()
+        : (IReadOnlyList<CpuPlayer>)ActiveCpus;
+
+    private async Task SetLanguage(AppLanguage lang)
+    {
+        LangSvc.Set(lang);
+        await SaveSettings();
+    }
+
+    // Maps active CPU index → seat name based on active CPU count.
+    // Seats: top-left, top, top-right, left, right
+    // Anti-clockwise: CPU 0 is always to the right of the player, then going right→top→left.
+    private string GetSeat(int i, int count) => count switch
+    {
+        1 => "top",
+        2 => i == 0 ? "right" : "left",
+        3 => i switch { 0 => "right", 1 => "top", _ => "left" },
+        4 => i switch { 0 => "right", 1 => "top-right", 2 => "top-left", _ => "left" },
+        _ => i switch { 0 => "right", 1 => "top-right", 2 => "top", 3 => "top-left", _ => "left" }, // 5 CPUs
+    };
+
+    private void MaybeStartCountdown()
+    {
+        bool isGameOver = GameSvc.GameWinner != null || GameSvc.PendingGameWinner != null;
+        if (GameSvc.Phase == GamePhase.RoundOver && !isGameOver)
+            _ = StartCountdown();
+    }
+
+    private async Task StartCountdown()
+    {
+        _countdownCts?.Cancel();
+        _countdownCts = new CancellationTokenSource();
+        var token = _countdownCts.Token;
+        _countdown = 10;
+        await InvokeAsync(StateHasChanged);
+        while (_countdown > 0 && !token.IsCancellationRequested)
+        {
+            try { await Task.Delay(1000, token); }
+            catch (OperationCanceledException) { return; }
+            if (token.IsCancellationRequested) return;
+            _countdown--;
+            await InvokeAsync(StateHasChanged);
+        }
+        if (!token.IsCancellationRequested)
+        {
+            try
+            {
+                await DoAdvanceRound();
+            }
+            catch (Exception)
+            {
+                StateHasChanged();
+                return;
+            }
+            MaybeStartCountdown();
+        }
+    }
+
+    private async Task OnNextRoundClick()
+    {
+        if (_roundAdvancing) return;
+        _countdownCts?.Cancel();
+        _countdown = 0;
+        await DoAdvanceRound();
+        MaybeStartCountdown();
+    }
+
+    private async Task OnQuitClick()
+    {
+        await StopAllAnimations();
+        if (GameSvc.GameWinner != null || GameSvc.PendingGameWinner != null)
+            await KillGame();
+        else
+            _showQuitConfirm = true;
+    }
+
+    private async Task DoQuit()
+    {
+        _showQuitConfirm = false;
+        await KillGame();
+    }
+
+    private async Task KillGame()
+    {
+        _countdownCts?.Cancel();
+        _simCts.Cancel();
+        _gameCts.Cancel();
+        _cpuRunning    = false;
+        _roundAdvancing = false;
+        _countdown = 0;
+        await StopAllAnimations();
+        ClearAllToasts();
+        GameSvc.GoToWelcome();
+    }
+
+    private void ClearAllToasts()
+    {
+        _secondDrawToast = null;
+        _lastCardToast   = null;
+        _roundEndToast   = null;
+        _gameEndToast    = null;
+    }
+
+    private async Task ToggleSound()
+    {
+        _soundEnabled = !_soundEnabled;
+        await JS.InvokeVoidAsync("setSoundEnabled", _soundEnabled);
+    }
+
+    private void SkipSimulation()
+    {
+        _countdownCts?.Cancel();
+        _simCts.Cancel();
+        _simCts = new CancellationTokenSource();
+        GameSvc.RunToGameOver();
+        StateHasChanged();
+    }
+
+    private async Task StopAllAnimations()
+    {
+        await JS.InvokeVoidAsync("stopFireworks");
+        await JS.InvokeVoidAsync("stopAshes");
+    }
+
+    private async Task DoStartGame()
+    {
+        _countdownCts?.Cancel();
+        _simCts.Cancel();
+        _gameCts.Cancel();
+        _gameCts = new CancellationTokenSource();
+        _cpuRunning     = false;
+        _roundAdvancing = false;
+        _countdown = 0;
+        await StopAllAnimations();
+        ResetTableExpansionState();
+        _discardAngles.Clear();
+        await SaveSettings();
+        GameSvc.StartNewGame();
+        // Reset after StartNewGame so no render between reset and GameWinner being cleared
+        // can re-trigger the animation.
+        _fireworksTriggered    = false;
+        _ashesTriggered        = false;
+        _eliminatedMidGame       = false;
+        _gameOverAshesTriggered  = false;
+        _simulationEstablished   = false;
+        _lastRoundToastRound   = 0;
+        _roundEndToast         = null;
+        _gameEndToast          = null;
+        _gameEndToastTriggered = false;
+        await PlayDealAnimation(_gameCts.Token);
+        await RunCpuTurns(_gameCts.Token);
+    }
+
+    private async Task RunCpuTurns(CancellationToken ct = default)
+    {
+        if (_cpuRunning) return;
+        _cpuRunning = true;
+        try
+        {
+            while (GameSvc.Phase == GamePhase.CpuTurn)
+            {
+                ct.ThrowIfCancellationRequested();
+                StateHasChanged();
+                await Task.Delay(1500, ct); // "CPU pensando..."
+
+                GameSvc.ExecuteCpuStep1Draw();
+                string cpuName = GameSvc.LastCpuTurnName ?? "";
+                var drawSum = GameSvc.LastCpuTurn;
+                // Animate card(s) flying to the CPU's seat before revealing the new hand count.
+                if (drawSum?.FirstDiscarded != null)
+                {
+                    // Second-draw sequence: draw first card → discard it → draw second card.
+                    // Step 1: first card flies deck → hand.
+                    _ = JS.InvokeVoidAsync("animateCardDraw", ".deck-drop-zone .card", ".active-player .hand");
+                    await Task.Delay(700, ct);
+                    // Step 2: first card flies hand → pile (discard).
+                    // Simultaneously update the DOM so the pile shows firstDiscarded face-up while the clone
+                    // is in flight; _cpuHandBonus=-1 keeps the hand count at N (second draw not yet shown).
+                    int firstDiscardAngle = _discardAngles.TryGetValue(drawSum.FirstDiscarded, out int fda)
+                        ? fda : (_discardAngles[drawSum.FirstDiscarded] = _discardAngleRng.Next(0, 360));
+                    _ = JS.InvokeVoidAsync("animateCardDraw", ".active-player .hand .card:first-child", ".pile-stack", firstDiscardAngle);
+                    _secondDrawToast = LangSvc.MsgCpuSecondDraw(cpuName);
+                    _cpuHandBonus = -1;
+                    StateHasChanged();
+                    await Task.Delay(700, ct);
+                    // Step 3: second card flies deck → hand.
+                    _ = JS.InvokeVoidAsync("animateCardDraw", ".deck-drop-zone .card", ".active-player .hand");
+                    await Task.Delay(430, ct);
+                    _cpuHandBonus = 0;
+                }
+                else
+                {
+                    string cpuDrawSrc = drawSum?.DrewFromDiscard == true ? ".discard-top" : ".deck-drop-zone .card";
+                    _ = JS.InvokeVoidAsync("animateCardDraw", cpuDrawSrc, ".active-player .hand");
+                    await Task.Delay(430, ct);
+                }
+                GameSvc.SetMessage(drawSum?.FirstDiscarded != null
+                    ? LangSvc.MsgCpuSecondDraw(cpuName)
+                    : drawSum?.DrewFromDiscard == true
+                        ? LangSvc.MsgCpuDrewDiscard(cpuName)
+                        : LangSvc.MsgCpuDrewDeck(cpuName));
+                StateHasChanged();     // now reveal new card count in CPU hand
+                await Task.Delay(570, ct);
+
+                string? activeCpuId = GameSvc.State?.CurrentPlayer?.Id;
+                int combosBeforePlay = GameSvc.State!.Table.Combinations.Count;
+                int[] cardCountsBeforePlay = GameSvc.State!.Table.Combinations.Select(c => c.Cards.Count).ToArray();
+                // Snapshot card refs so we can locate each added card's actual sorted position.
+                var cardRefsBeforePlay = GameSvc.State!.Table.Combinations.Select(c => c.Cards.ToList()).ToArray();
+                // Snapshot hand so we can find the replacement card's exact DOM position for the swap animation.
+                var handBeforePlay = (GameSvc.State?.CurrentPlayer as CpuPlayer)?.Hand.Cards.ToList();
+                // In simulation mode: ordered snapshot used to fly face-up cards from correct positions.
+                var simHandSnap = GameSvc.IsSimulationMode && handBeforePlay != null
+                    ? GameSvc.OrderHandForDisplay(handBeforePlay).ToList()
+                    : null;
+                GameSvc.ExecuteCpuStep2Play();
+                int combosAfterPlay = GameSvc.State!.Table.Combinations.Count;
+                var combos = GameSvc.State!.Table.Combinations;
+                var playSum = GameSvc.LastCpuTurn;
+
+                // Compute animation plan upfront.
+                // Swap-replaced cards (in SwappedJokers) are excluded from addAnimations:
+                // they animate via the swap path, not the add-to-combo reveal loop.
+                bool hasNewCombos = combosAfterPlay > combosBeforePlay;
+                var swappedCardSet = new HashSet<Card>(
+                    playSum?.SwappedJokers ?? Enumerable.Empty<Card>(),
+                    ReferenceEqualityComparer.Instance);
+                var addAnimations = new List<(int comboIdx, Card card, int animPos)>();
+                for (int ci = 0; ci < combosBeforePlay && ci < combos.Count; ci++)
+                {
+                    if (combos[ci].Cards.Count <= cardCountsBeforePlay[ci]) continue;
+                    var beforeSet = new HashSet<Card>(cardRefsBeforePlay[ci], ReferenceEqualityComparer.Instance);
+                    var newEntries = new List<(int animPos, Card card)>();
+                    for (int pi = 0; pi < combos[ci].Cards.Count; pi++)
+                    {
+                        if (beforeSet.Contains(combos[ci].Cards[pi])) continue;
+                        if (swappedCardSet.Contains(combos[ci].Cards[pi])) continue; // handled by swap animation
+                        newEntries.Add((pi + 1, combos[ci].Cards[pi]));
+                    }
+                    // For sequences: animate closest to the original boundary first.
+                    // e.g. adding 5♥,6♥ to [7♥,8♥,9♥] → animate 6♥ before 5♥.
+                    if (newEntries.Count > 1 && combos[ci].Type == CombinationType.Sequence)
+                    {
+                        int minOrig = Enumerable.Range(0, combos[ci].Cards.Count)
+                            .Where(i => beforeSet.Contains(combos[ci].Cards[i]))
+                            .DefaultIfEmpty(0).Min();
+                        int maxOrig = Enumerable.Range(0, combos[ci].Cards.Count)
+                            .Where(i => beforeSet.Contains(combos[ci].Cards[i]))
+                            .DefaultIfEmpty(combos[ci].Cards.Count - 1).Max();
+                        newEntries.Sort((a, b) =>
+                        {
+                            int posA = a.animPos - 1;
+                            int proxA = posA < minOrig ? minOrig - posA : posA - maxOrig;
+                            int posB = b.animPos - 1;
+                            int proxB = posB < minOrig ? minOrig - posB : posB - maxOrig;
+                            return proxA != proxB ? proxA.CompareTo(proxB) : a.animPos.CompareTo(b.animPos);
+                        });
+                    }
+                    foreach (var (animPos, card) in newEntries)
+                        addAnimations.Add((ci, card, animPos));
+                }
+                bool hasAdds = addAnimations.Count > 0;
+                int swapCount = playSum?.SwappedJokers.Count ?? 0;
+                bool anySwap = swapCount > 0 || (playSum?.PositionalSwapCount > 0);
+
+                // Toast: fire once at the start for any joker displacement (true swap or positional).
+                if (anySwap)
+                    _ = ShowLastCardToast(LangSvc.WarnJokerSwap(cpuName), "playJokerSwapSound");
+
+                // Action message: set before animations so it is visible while cards fly.
+                // Any joker displacement takes priority over lay-down.
+                if (GameSvc.Phase != GamePhase.RoundOver && GameSvc.Phase != GamePhase.GameOver)
+                {
+                    int laidCount = playSum?.LaidDown.Sum(c => c.Cards.Count) ?? 0;
+                    if (anySwap)
+                        GameSvc.SetMessage(LangSvc.MsgCpuSwappedJoker(cpuName));
+                    else if (laidCount > 0)
+                        GameSvc.SetMessage(LangSvc.MsgCpuLaidDown(cpuName, laidCount));
+                    else if (playSum?.AddedToTable.Count > 0)
+                        GameSvc.SetMessage(LangSvc.MsgCpuAddedToTable(cpuName));
+                }
+
+                // Pre-hide all new content before the first StateHasChanged in the animation loop.
+                if (anySwap || hasNewCombos || hasAdds)
+                {
+                    int totalBonus = addAnimations.Count;
+                    for (int rc = combosBeforePlay; rc < combosAfterPlay; rc++)
+                        totalBonus += combos[rc].Cards.Count;
+                    _cpuHandBonus = totalBonus;
+                    _animatingCpuId = activeCpuId;
+                    _simAnimatingHandCards = simHandSnap != null ? new List<Card>(simHandSnap) : null;
+                    _simHandGoneCards.Clear();
+
+                    if (hasNewCombos)
+                    {
+                        _cpuRevealComboCount = combosBeforePlay;
+                        for (int rc = combosBeforePlay; rc < combosAfterPlay; rc++)
+                        {
+                            _cpuHiddenCards[rc] = new HashSet<Card>(combos[rc].Cards, ReferenceEqualityComparer.Instance);
+                            _newComboIndices.Add(rc);
+                        }
+                    }
+                    for (int ci = 0; ci < combosBeforePlay && ci < combos.Count; ci++)
+                    {
+                        if (combos[ci].Cards.Count <= cardCountsBeforePlay[ci]) continue;
+                        var origSet = new HashSet<Card>(cardRefsBeforePlay[ci], ReferenceEqualityComparer.Instance);
+                        _cpuHiddenCards[ci] = new HashSet<Card>(
+                            combos[ci].Cards.Where(c => !origSet.Contains(c)),
+                            ReferenceEqualityComparer.Instance);
+                    }
+                }
+
+                // Helpers: find a card's source selector and remove it from the sim snapshot.
+                string HandSrc(Card? card)
+                {
+                    if (card != null && _simAnimatingHandCards != null)
+                    {
+                        int idx = _simAnimatingHandCards.FindIndex(c => ReferenceEquals(c, card));
+                        if (idx >= 0) return $".active-player .hand .card:nth-child({idx + 1})";
+                    }
+                    return ".active-player .hand .card:first-child";
+                }
+                void RemoveFromSimHand(Card? card)
+                {
+                    if (card != null) _simHandGoneCards.Add(card);
+                }
+
+                // Local helper: reveal one new combo card by card.
+                // Each new combo is pre-registered in _cpuHiddenCards and _newComboIndices at setup,
+                // so combos are independent — they can be revealed in any order without affecting each other.
+                async Task RevealNewComboCards(int newComboIdx)
+                {
+                    int newComboCardCount = combos[newComboIdx].Cards.Count;
+                    for (int cardIdx = 1; cardIdx <= newComboCardCount; cardIdx++)
+                    {
+                        var card = combos[newComboIdx].Cards[cardIdx - 1];
+                        _ = JS.InvokeVoidAsync("animateCardDraw",
+                            HandSrc(card),
+                            $"[data-combo-idx='{newComboIdx}'] .card:nth-child({cardIdx})");
+                        await Task.Delay(380, ct); // card appears exactly when clone fades to 0
+                        RemoveFromSimHand(card);
+                        _cpuHiddenCards[newComboIdx].Remove(card);
+                        _cpuHandBonus--;
+                        _lastComboCount = -1; // card is now in DOM — re-check overflow with actual layout
+                        StateHasChanged();
+                        await Task.Delay(120, ct);
+                    }
+                    // Advance the cutoff so this combo stays visible after its _cpuHiddenCards entry is removed.
+                    _cpuRevealComboCount = Math.Max(_cpuRevealComboCount, newComboIdx + 1);
+                    _cpuHiddenCards.Remove(newComboIdx);
+                    _newComboIndices.Remove(newComboIdx);
+                }
+
+                // Classify add animations into roles for the new phase order.
+                // Within-combo order already set by proximity sort above; keep stable sort by comboIdx only.
+                addAnimations = addAnimations.OrderBy(a => a.comboIdx).ToList();
+
+                // The card drawn from the discard pile (if any) — shown in Phase 2.
+                Card? dfCard = drawSum?.DrewFromDiscard == true ? drawSum.DrawnCard : null;
+                var dfCardAdd = dfCard == null ? ((int comboIdx, Card card, int animPos)?)null
+                    : addAnimations
+                        .Where(a => ReferenceEquals(a.card, dfCard))
+                        .Cast<(int, Card, int)?>()
+                        .FirstOrDefault();
+                int dfNewComboIdx = -1;
+                if (dfCard != null && dfCardAdd == null)
+                    for (int rc = combosBeforePlay; rc < combosAfterPlay; rc++)
+                        if (combos[rc].Cards.Any(c => ReferenceEquals(c, dfCard))) { dfNewComboIdx = rc; break; }
+
+                var dfAddSet = dfCardAdd.HasValue
+                    ? new HashSet<(int, Card, int)> { dfCardAdd.Value }
+                    : new HashSet<(int, Card, int)>();
+
+                // Joker cards added to existing combos, but ONLY when the joker was obtained via a swap
+                // this turn (swapCount > 0). Jokers from the CPU's own hand animate in Phase 4 alongside
+                // other adds, preserving the natural add order (e.g. A♥ → JKR → 3♣).
+                var jokerAdds = new Queue<(int comboIdx, Card card, int animPos)>(
+                    addAnimations.Where(a => a.card.IsJoker && swapCount > 0 && !dfAddSet.Contains(a)));
+
+                // Regular (non-joker, non-DFD) adds to existing combos, plus jokers from the CPU's own
+                // hand (swapCount == 0) — Phase 4.
+                var regularAdds = addAnimations
+                    .Where(a => (!a.card.IsJoker || swapCount == 0) && !dfAddSet.Contains(a))
+                    .ToList();
+
+                var jokerSwapNewCombos = new List<int>();
+                var newCombos = new List<int>();
+                for (int rc = combosBeforePlay; rc < combosAfterPlay; rc++)
+                {
+                    if (rc == dfNewComboIdx) continue;
+                    if (swapCount > 0 && combos[rc].Cards.Any(c => c.IsJoker)) jokerSwapNewCombos.Add(rc);
+                    else newCombos.Add(rc);
+                }
+
+                // Reorder Table.Combinations so new combos appear on screen in phase order:
+                // DFD combo (Phase 2) → jokerSwapNewCombos (Phase 3) → newCombos (Phase 5).
+                // This keeps the visual position consistent with the animation reveal sequence.
+                if (hasNewCombos)
+                {
+                    var desiredOrder = new List<int>();
+                    if (dfNewComboIdx >= 0) desiredOrder.Add(dfNewComboIdx);
+                    desiredOrder.AddRange(jokerSwapNewCombos);
+                    desiredOrder.AddRange(newCombos);
+                    GameSvc.State!.Table.ReorderNewCombinations(combosBeforePlay, desiredOrder);
+
+                    // Remap all index-keyed structures to match the new physical positions.
+                    var remap = new Dictionary<int, int>();
+                    for (int i = 0; i < desiredOrder.Count; i++)
+                        remap[desiredOrder[i]] = combosBeforePlay + i;
+
+                    var remapHidden = _cpuHiddenCards.Where(kv => kv.Key >= combosBeforePlay).ToList();
+                    foreach (var kv in remapHidden) _cpuHiddenCards.Remove(kv.Key);
+                    foreach (var kv in remapHidden) _cpuHiddenCards[remap[kv.Key]] = kv.Value;
+
+                    _newComboIndices = new HashSet<int>(_newComboIndices.Select(i => i < combosBeforePlay ? i : remap[i]));
+
+                    if (dfNewComboIdx >= 0) dfNewComboIdx = remap[dfNewComboIdx];
+                    jokerSwapNewCombos = jokerSwapNewCombos.Select(i => remap[i]).ToList();
+                    newCombos = newCombos.Select(i => remap[i]).ToList();
+                }
+
+                // Phase 1: joker swaps — replacement flies to its slot; message is already visible.
+                if (swapCount > 0)
+                {
+                    foreach (var replacement in playSum!.SwappedJokers)
+                    {
+                        for (int ci = 0; ci < combos.Count; ci++)
+                        {
+                            int pos = -1;
+                            for (int pi = 0; pi < combos[ci].Cards.Count; pi++)
+                                if (ReferenceEquals(combos[ci].Cards[pi], replacement)) { pos = pi + 1; break; }
+                            if (pos < 0) continue;
+                            // Find the joker being displaced (in old combo, not in new).
+                            var newCardSet = new HashSet<Card>(combos[ci].Cards, ReferenceEqualityComparer.Instance);
+                            int jokerOldPos = -1;
+                            for (int j = 0; j < cardRefsBeforePlay[ci].Count; j++)
+                            {
+                                var c = cardRefsBeforePlay[ci][j];
+                                if (c.IsJoker && !newCardSet.Contains(c)) { jokerOldPos = j + 1; break; }
+                            }
+                            // Fire both directions simultaneously: replacement → combo, joker → hand.
+                            _ = JS.InvokeVoidAsync("animateCardDraw",
+                                HandSrc(replacement),
+                                $"[data-combo-idx='{ci}'] .card:nth-child({pos})");
+                            if (jokerOldPos >= 0)
+                                _ = JS.InvokeVoidAsync("animateCardDraw",
+                                    $"[data-combo-idx='{ci}'] .card:nth-child({jokerOldPos})",
+                                    ".active-player .hand");
+                            await Task.Delay(450, ct);
+                            RemoveFromSimHand(replacement);
+                            // Reveal replacement in existing combo so it appears as the animation lands.
+                            if (_cpuHiddenCards.TryGetValue(ci, out var swapHidden))
+                                swapHidden.Remove(replacement);
+                            StateHasChanged();
+                            await Task.Delay(200, ct);
+                            break;
+                        }
+                    }
+                }
+
+                // Phase 2: the card drawn from the discard pile, placed in its combo.
+                if (dfCardAdd.HasValue)
+                {
+                    var (comboIdx, _, animPos) = dfCardAdd.Value;
+                    _ = JS.InvokeVoidAsync("animateCardDraw",
+                        HandSrc(dfCard),
+                        $"[data-combo-idx='{comboIdx}'] .card:nth-child({animPos})");
+                    await Task.Delay(380, ct);
+                    RemoveFromSimHand(dfCard);
+                    _cpuHiddenCards[comboIdx].Remove(dfCard!);
+                    _cpuHandBonus--;
+                    _lastComboCount = -1;
+                    StateHasChanged();
+                    await Task.Delay(120, ct);
+                }
+                else if (dfNewComboIdx >= 0)
+                {
+                    await RevealNewComboCards(dfNewComboIdx);
+                }
+
+                // Phase 3: joker adds to existing combos (obtained via swap, used in an existing combo),
+                // then joker-containing new combos that used a swapped joker.
+                foreach (var (comboIdx, jokerCard, animPos) in jokerAdds)
+                {
+                    _ = JS.InvokeVoidAsync("animateCardDraw",
+                        HandSrc(jokerCard),
+                        $"[data-combo-idx='{comboIdx}'] .card:nth-child({animPos})");
+                    await Task.Delay(380, ct);
+                    RemoveFromSimHand(jokerCard);
+                    _cpuHiddenCards[comboIdx].Remove(jokerCard);
+                    _cpuHandBonus--;
+                    _lastComboCount = -1;
+                    StateHasChanged();
+                    await Task.Delay(120, ct);
+                }
+                foreach (var jnc in jokerSwapNewCombos)
+                    await RevealNewComboCards(jnc);
+
+                // Phase 4: remaining (non-joker, non-DFD) adds to existing combos.
+                for (int i = 0; i < regularAdds.Count; i++)
+                {
+                    var (comboIdx, addCard, animPos) = regularAdds[i];
+                    _ = JS.InvokeVoidAsync("animateCardDraw",
+                        HandSrc(addCard),
+                        $"[data-combo-idx='{comboIdx}'] .card:nth-child({animPos})");
+                    await Task.Delay(380, ct);
+                    RemoveFromSimHand(addCard);
+                    _cpuHiddenCards[comboIdx].Remove(addCard);
+                    _cpuHandBonus--;
+                    _lastComboCount = -1;
+                    StateHasChanged();
+                    if (i < regularAdds.Count - 1)
+                        await Task.Delay(120, ct);
+                }
+                // Clear only existing-combo entries (index < combosBeforePlay).
+                // New-combo entries (index >= combosBeforePlay) must remain for Phase 5.
+                for (int ci = 0; ci < combosBeforePlay; ci++)
+                    _cpuHiddenCards.Remove(ci);
+
+                // Phase 5: new combos in lay-down order.
+                foreach (var nc in newCombos)
+                    await RevealNewComboCards(nc);
+                if (hasNewCombos)
+                    _cpuRevealComboCount = -1;
+
+                _cpuHandBonus = 0;
+                _animatingCpuId = null;
+                _simAnimatingHandCards = null;
+                _simHandGoneCards.Clear();
+                StateHasChanged();
+                if (GameSvc.Phase == GamePhase.RoundOver || GameSvc.Phase == GamePhase.GameOver) break;
+                await Task.Delay(1000, ct);
+
+                // Burn duplicate-suit cards from triples concurrently with the discard animation.
+                // The JS clones cards into fixed-position overlays so they survive the Blazor re-render.
+                if (GameSvc.CpuTripleDiscardsPending.Count > 0)
+                {
+                    var activeCpu = GameSvc.RoundCpus.FirstOrDefault(c => c.Id == activeCpuId);
+                    _ = JS.InvokeVoidAsync("burnComboCards", (object)ComputeBurnTargets(GameSvc.CpuTripleDiscardsPending), activeCpu?.Hand.Count == 1);
+                }
+
+                // Execute discard first so we know which card (and its angle) lands on the pile,
+                // then animate the flying card to arrive at that exact angle.
+                GameSvc.ExecuteCpuStep3Discard();
+                var cpuDiscardTop = GameSvc.State?.Deck.DiscardTop;
+                int cpuEndAngle = 0;
+                if (cpuDiscardTop != null)
+                    cpuEndAngle = _discardAngles.TryGetValue(cpuDiscardTop, out int a) ? a : (_discardAngles[cpuDiscardTop] = _discardAngleRng.Next(0, 360));
+                _secondDrawToast = null;
+                _ = JS.InvokeVoidAsync("animateCardDraw", ".active-player .hand .card:first-child", ".pile-stack", cpuEndAngle);
+                await Task.Delay(380, ct);
+                StateHasChanged();
+
+                // Show last-card toast after CPU discards (not after lay-down)
+                if (GameSvc.Phase != GamePhase.RoundOver && GameSvc.Phase != GamePhase.GameOver)
+                {
+                    var justPlayedCpu = GameSvc.RoundCpus.FirstOrDefault(c => c.Id == activeCpuId);
+                    if (justPlayedCpu != null && justPlayedCpu.Hand.Count == 1 && _alertedLastCard.Add(justPlayedCpu.Id))
+                        _ = ShowLastCardToast(LangSvc.WarnLastCard(new List<string> { justPlayedCpu.Name }));
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            _cpuRevealComboCount = -1;
+            _cpuHiddenCards.Clear();
+            _newComboIndices.Clear();
+            _cpuHandBonus = 0;
+            _animatingCpuId = null;
+            _simAnimatingHandCards = null;
+            _simHandGoneCards.Clear();
+            _cpuRunning = false;
+            _lastComboCount = -1; // force overflow re-check on fully-revealed DOM
+            StateHasChanged(); // let OnAfterRenderAsync fire the round-end toast now that _cpuRunning is false
+        }
+    }
+
+    // ── Hand drag (reorder / discard / lay-down) ─────────────────────────
+
+    private void OnDragStart(int idx)
+    {
+        if (_dealRevealCounts.Count > 0) { _skipRender = true; return; }
+        // Allow hand reordering even during CPU turns; only game-action drags (deck/discard) are blocked.
+        _dragFrom = idx;
+        _draggingFromDeck = false;
+        _draggingFromDiscard = false;
+    }
+
+    // ── Pile drag (draw) ──────────────────────────────────────────────────
+
+    private void OnDragStartDeck()
+    {
+        if (_cpuRunning) { _skipRender = true; return; }
+        if (_dealRevealCounts.Count > 0) { _skipRender = true; return; }
+        if (GameSvc.Phase != GamePhase.AwaitingDraw) { _skipRender = true; return; }
+        _draggingFromDeck = true;
+        _dragFrom = -1;
+        _draggingFromDiscard = false;
+    }
+
+    private void OnDragStartDiscard()
+    {
+        if (_cpuRunning) { _skipRender = true; return; }
+        if (_dealRevealCounts.Count > 0) { _skipRender = true; return; }
+        if (GameSvc.Phase != GamePhase.AwaitingDraw || GameSvc.MustDrawFromDeck) { _skipRender = true; return; }
+        _draggingFromDiscard = true;
+        _dragFrom = -1;
+        _draggingFromDeck = false;
+    }
+
+    private void OnDragEnd()
+    {
+        ClearDragState();
+    }
+
+    // ── Drop: hand cards & end-zones ──────────────────────────────────────
+
+    // Synchronous: hand-card reorder is now handled by JS via HandleHandCardDrop (DotNet invokable),
+    // which fires before Blazor event delegation and works with both real and synthetic drag events.
+    // OnDropOnHandCard handles deck/discard drags (which rely on Blazor state set by ondragstart);
+    // for discard drags it also inserts the drawn card at the specific target position.
+    private void OnDropOnHandCard(int targetIdx)
+    {
+        bool fromDeck    = _draggingFromDeck;
+        bool fromDiscard = _draggingFromDiscard;
+        ClearDragState();
+        if (fromDeck)    { ExecuteMainPlayerDraw(false); return; }
+        if (fromDiscard) { DrawFromDiscardToPosition(targetIdx); return; }
+        // Hand-card reorder handled by JS drop listener → HandleHandCardDrop
+    }
+
+    private void DrawFromDiscardToPosition(int targetIdx)
+    {
+        GameSvc.DrawFromDiscard(); // card added to end and auto-selected
+        int fromIdx = GameSvc.MainPlayer.Hand.Count - 1;
+        if (targetIdx < fromIdx)
+            GameSvc.ReorderHand(fromIdx, targetIdx);
+    }
+
+    private void OnDropToStart()
+    {
+        if (_draggingFromDeck)     { ClearDragState(); ExecuteMainPlayerDraw(false); return; }
+        if (_draggingFromDiscard)  { ClearDragState(); DrawFromDiscardToPosition(0); return; }
+        int from = _dragFrom;
+        ClearDragState();
+        if (from >= 0) GameSvc.ReorderHand(from, 0);
+    }
+
+    private void OnDropToEnd()
+    {
+        if (_draggingFromDeck)     { ClearDragState(); ExecuteMainPlayerDraw(false); return; }
+        if (_draggingFromDiscard)  { ClearDragState(); ExecuteMainPlayerDraw(true);  return; }
+        int from = _dragFrom;
+        ClearDragState();
+        if (from >= 0) GameSvc.ReorderHand(from, GameSvc.MainPlayer.Hand.Count);
+    }
+
+    // Fallback: drop on the player-section background (not on a specific card/endzone)
+    private void OnDropToHandSection()
+    {
+        if (_draggingFromDeck)    { ClearDragState(); ExecuteMainPlayerDraw(false); return; }
+        if (_draggingFromDiscard) { ClearDragState(); ExecuteMainPlayerDraw(true);  return; }
+        ClearDragState();
+    }
+
+    private void ClearDragState()
+    {
+        _dragFrom = -1;
+        _draggingFromDeck = false;
+        _draggingFromDiscard = false;
+    }
+
+    // ── Drop: deck (return discard-drawn card) ────────────────────────────
+
+    private void OnDropToDeck()
+    {
+        if (GameSvc.Phase == GamePhase.AwaitingAction && GameSvc.HasUnusedDiscardCard)
+            GameSvc.ReturnDiscardCard();
+        ClearDragState();
+    }
+
+    // ── Drop: discard pile ────────────────────────────────────────────────
+
+    private bool IsDiscardDropTarget
+    {
+        get
+        {
+            if (_dragFrom < 0 || GameSvc.Phase != GamePhase.AwaitingAction) return false;
+            if (_dragFrom >= GameSvc.MainPlayer.Hand.Cards.Count) return false;
+            var dragged = GameSvc.MainPlayer.Hand.Cards[_dragFrom];
+            // Allow dropping the discard-drawn card back onto the discard pile to return it
+            if (GameSvc.HasUnusedDiscardCard)
+                return ReferenceEquals(dragged, GameSvc.DiscardDrawnCard);
+            return !dragged.IsJoker;
+        }
+    }
+
+    private async Task OnDropToDiscard()
+    {
+        if (_dragFrom < 0 || _dragFrom >= GameSvc.MainPlayer.Hand.Cards.Count)
+        {
+            ClearDragState();
+            return;
+        }
+        var card = GameSvc.MainPlayer.Hand.Cards[_dragFrom];
+        // Return discard-drawn card back to the pile
+        if (GameSvc.HasUnusedDiscardCard && ReferenceEquals(card, GameSvc.DiscardDrawnCard))
+        {
+            ClearDragState();
+            GameSvc.ReturnDiscardCard();
+            return;
+        }
+        ClearDragState();
+        GameSvc.SelectOnly(card);
+        await DoDiscard();
+    }
+
+    // ── Drop: table (lay down) ────────────────────────────────────────────
+
+    private bool IsTableDropTarget
+    {
+        get
+        {
+            if (_dragFrom < 0 || GameSvc.Phase != GamePhase.AwaitingAction) return false;
+            if (_dragFrom >= GameSvc.MainPlayer.Hand.Cards.Count) return false;
+            var dragged = GameSvc.MainPlayer.Hand.Cards[_dragFrom];
+            int total = GameSvc.SelectedCards.Count + (GameSvc.SelectedCards.Contains(dragged) ? 0 : 1);
+            return total >= 3;
+        }
+    }
+
+    private void OnDropToTable()
+    {
+        if (_dragFrom < 0 || _dragFrom >= GameSvc.MainPlayer.Hand.Cards.Count)
+        {
+            if (!AnyDragging) _skipRender = true;
+            ClearDragState();
+            return;
+        }
+        var card = GameSvc.MainPlayer.Hand.Cards[_dragFrom];
+        ClearDragState();
+        if (!GameSvc.SelectedCards.Contains(card))
+            GameSvc.ToggleCard(card);
+        GameSvc.TryLayDown();
+        MaybeStartCountdown();
+    }
+
+    // ── Drop: existing combo ──────────────────────────────────────────────
+
+    private void OnDropToCombo(int comboIdx, bool isDropTarget)
+    {
+        if (!isDropTarget) { return; } // combo can't accept; let table handler try TryLayDown
+        if (_dragFrom < 0 || _dragFrom >= GameSvc.MainPlayer.Hand.Cards.Count)
+        {
+            if (!AnyDragging) _skipRender = true;
+            ClearDragState();
+            return;
+        }
+        var card = GameSvc.MainPlayer.Hand.Cards[_dragFrom];
+        bool isMultiDrag = GameSvc.SelectedCards.Count > 1 && GameSvc.SelectedCards.Contains(card);
+        ClearDragState();
+        if (isMultiDrag)
+            GameSvc.TryAddToCombo(comboIdx);
+        else
+            GameSvc.TryAddToComboByDrop(card, comboIdx);
+        MaybeStartCountdown();
+    }
+
+    // ── Computed helpers ──────────────────────────────────────────────────
+
+    private bool IsHandDropTarget =>
+        (_draggingFromDeck || _draggingFromDiscard)
+        && GameSvc.Phase == GamePhase.AwaitingDraw;
+
+
+    private string CardClass(Card card)
+    {
+        if (card.IsJoker) return "joker";
+        return card.Suit is Suit.Hearts or Suit.Diamonds ? "red" : "black";
+    }
+
+    // Like CardClass but adds sim-card-gone when the card has flown out of the hand during simulation animation.
+    // Used only in hand rendering so table combo cards are unaffected.
+    private string HandCardClass(Card card) =>
+        _simHandGoneCards.Contains(card) ? CardClass(card) + " sim-card-gone" : CardClass(card);
+
+    private object[] ComputeBurnTargets(IReadOnlyList<(int ComboIndex, Card Card)> pending) =>
+        pending.Select(t =>
+        {
+            var combo = GameSvc.State!.Table.Combinations[t.ComboIndex];
+            var idx = combo.Cards
+                .Select((c, i) => (c, i))
+                .FirstOrDefault(x => ReferenceEquals(x.c, t.Card), (null!, -1)).i;
+            return new { comboIdx = t.ComboIndex, cardIdx = idx };
+        })
+        .Where(t => t.cardIdx >= 0)
+        .Cast<object>()
+        .ToArray();
+
+    private bool IsCpuActive(CpuPlayer cpu) =>
+        GameSvc.Phase == GamePhase.CpuTurn && GameSvc.State?.CurrentPlayer == cpu;
+
+    private IEnumerable<Card> CpuHandForDisplay(CpuPlayer cpu)
+    {
+        if (GameSvc.IsSimulationMode)
+            return cpu.Id == _animatingCpuId && _simAnimatingHandCards != null
+                ? _simAnimatingHandCards
+                : GameSvc.OrderHandForDisplay(cpu.Hand.Cards);
+        return cpu.Hand.Cards.OrderBy(c => c.IsJoker ? 99 : (int)c.Suit).ThenBy(c => c.IsJoker ? 0 : c.Rank);
+    }
+
+    private void ResetTableExpansionState()
+    {
+        _tableExpanded  = true;
+        _combosShrunk   = false;
+        _lastComboCount = -1;
+    }
+
+    private int DiscardAngle(Card card)
+    {
+        if (!_discardAngles.TryGetValue(card, out int angle))
+            _discardAngles[card] = angle = _discardAngleRng.Next(0, 360);
+        return angle;
+    }
+
+    // ── Button / click handlers ───────────────────────────────────────────
+
+    private void ExecuteMainPlayerDraw(bool fromDiscard)
+    {
+        if (fromDiscard) GameSvc.DrawFromDiscard(); else GameSvc.DrawFromDeck();
+        var lastCard = GameSvc.MainPlayer.Hand.Cards.LastOrDefault();
+        if (lastCard != null)
+        {
+            _justDrawnCard = lastCard;
+            string src = fromDiscard ? ".discard-top" : ".deck-drop-zone .card";
+            _ = JS.InvokeVoidAsync("animateCardDraw", src, ".card-drawn-in");
+            _ = ClearJustDrawnAfterDelay();
+        }
+    }
+
+    private async Task ClearJustDrawnAfterDelay()
+    {
+        await Task.Delay(520);
+        _justDrawnCard = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void DoDraw()
+    {
+        if (GameSvc.Phase != GamePhase.AwaitingDraw) { _skipRender = true; return; }
+        ExecuteMainPlayerDraw(false);
+    }
+
+    private void DoDrawDiscard()
+    {
+        if (GameSvc.Phase != GamePhase.AwaitingDraw) { _skipRender = true; return; }
+        ExecuteMainPlayerDraw(true);
+    }
+
+    private void DoToggleCard(Card card) => GameSvc.ToggleCard(card);
+
+    private void DoLayDown()
+    {
+        GameSvc.TryLayDown();
+        MaybeStartCountdown();
+    }
+
+    private void DoAddToCombo(int idx)
+    {
+        GameSvc.TryAddToCombo(idx);
+        MaybeStartCountdown();
+    }
+
+    private void OnComboRowClick(int comboIdx)
+    {
+        if (GameSvc.Phase != GamePhase.AwaitingAction) { _skipRender = true; return; }
+        if (GameSvc.SelectedCards.Count == 1 && GameSvc.SelectedCards.First().IsJoker)
+        {
+            GameSvc.TryReturnJokerToCombo(comboIdx);
+            MaybeStartCountdown();
+            return;
+        }
+        GameSvc.TryAddToCombo(comboIdx);
+        MaybeStartCountdown();
+    }
+
+    private void OnTableCardClick(int comboIdx, bool swappable)
+    {
+        if (!swappable) { _skipRender = true; return; }
+        GameSvc.TrySwapJoker(comboIdx);
+    }
+
+    private async Task DoDiscard()
+    {
+        var discarding = GameSvc.SelectedCards.FirstOrDefault();
+
+        if (GameSvc.TripleDiscardsPending.Count > 0)
+            _ = JS.InvokeVoidAsync("burnComboCards", (object)ComputeBurnTargets(GameSvc.TripleDiscardsPending), GameSvc.MainPlayer.Hand.Count == 1);
+
+        await JS.InvokeVoidAsync("animateCardsPlay", ".hand-fan .card.selected", ".pile-stack");
+        if (discarding != null) _discardAngles[discarding] = 0; // player's card always stays flat
+        GameSvc.TryDiscard();
+        await RunCpuTurns(_gameCts.Token);
+        MaybeStartCountdown();
+    }
+
+    private async Task DoAdvanceRound()
+    {
+        if (_roundAdvancing) return;
+        if (GameSvc.Phase == GamePhase.Welcome) return;
+        _roundAdvancing = true;
+        try
+        {
+        _roundEndToast = null;
+        ResetTableExpansionState();
+        _discardAngles.Clear();
+        if (GameSvc.IsSimulationMode)
+        {
+            _simulationEstablished = true;
+            await JS.InvokeVoidAsync("stopAshes");
+        }
+        GameSvc.AdvanceRound();
+
+        _simCts = new CancellationTokenSource();
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_gameCts.Token, _simCts.Token);
+        var ct = linked.Token;
+        try
+        {
+            await PlayDealAnimation(ct);
+            await RunCpuTurns(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // SkipSimulation or quit — RunToGameOver already called by SkipSimulation if applicable
+        }
+        } // try
+        finally { _roundAdvancing = false; }
+    }
+}

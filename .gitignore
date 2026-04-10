@@ -1,0 +1,17 @@
+# Build outputs
+bin/
+obj/
+
+# Visual Studio
+**/.vs/
+
+# User-specific files
+*.user
+*.suo
+
+# Logs
+bin/Debug/net10.0/logs/
+
+# OS
+.DS_Store
+Thumbs.db
